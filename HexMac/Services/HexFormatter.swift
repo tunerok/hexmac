@@ -33,6 +33,10 @@ enum HexFormatter {
         String(format: "%0\(width)X", offset)
     }
 
+    static func columnIndexString(for column: Int) -> String {
+        String(format: "%02X", column)
+    }
+
     static func hexPair(for byte: UInt8) -> String {
         String(format: "%02X", byte)
     }

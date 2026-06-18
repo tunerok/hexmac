@@ -3,6 +3,7 @@
 //  HexMac
 //
 
+import AppKit
 import Foundation
 import Observation
 
@@ -13,6 +14,12 @@ final class HexEditorViewModel {
     var selection: HexSelection?
     var textEncoding: TextEncodingMode = .ascii
     var bytesPerRow: BytesPerRowSetting = .sixteen
+    var highlights: [HexHighlight] = []
+    var scrollTargetOffset: Int?
+    var showCRCSheet = false
+    var showFillDialog = false
+    var crcInputBytes: [UInt8] = []
+    var terminalHistory: [TerminalLine] = []
     var editingOffset: Int?
     var editingHexText = ""
     var errorMessage: String?
@@ -76,6 +83,12 @@ final class HexEditorViewModel {
         document?.close()
         document = nil
         selection = nil
+        highlights = []
+        scrollTargetOffset = nil
+        showCRCSheet = false
+        showFillDialog = false
+        crcInputBytes = []
+        terminalHistory = []
         editingOffset = nil
         editingHexText = ""
         undoManager.removeAllActions()
@@ -108,6 +121,97 @@ final class HexEditorViewModel {
 
     func endSelection(at offset: Int) {
         updateSelection(to: offset)
+    }
+
+    func highlight(at offset: Int) -> HighlightColor? {
+        highlights.first { $0.contains(offset) }?.color
+    }
+
+    func addHighlight(color: HighlightColor) {
+        guard let selection else { return }
+        let start = selection.start
+        let end = selection.end
+        highlights.removeAll { $0.overlaps(rangeStart: start, rangeEnd: end) }
+        highlights.append(HexHighlight(start: start, end: end, color: color))
+    }
+
+    func removeHighlights(containing offset: Int) {
+        highlights.removeAll { $0.contains(offset) }
+    }
+
+    func removeHighlight(id: UUID) {
+        highlights.removeAll { $0.id == id }
+    }
+
+    func navigateToHighlight(_ highlight: HexHighlight) {
+        selection = HexSelection(anchor: highlight.start, active: highlight.end)
+        scrollTargetOffset = highlight.start
+    }
+
+    func clearScrollTarget() {
+        scrollTargetOffset = nil
+    }
+
+    func copySelectionHex() {
+        guard let selection else { return }
+        let data = bytes(in: selection.start..<(selection.end + 1))
+        let text = HexFormatter.hexString(for: data)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    func requestFillSelection() {
+        guard selection != nil else { return }
+        showFillDialog = true
+    }
+
+    func fillSelection(with value: UInt8) {
+        guard let selection, let document else { return }
+        let range = selection.start..<(selection.end + 1)
+        guard !range.isEmpty else { return }
+
+        do {
+            let oldValues = try document.mappedFile.replaceBytes(in: range, with: value)
+            document.markDirty()
+            registerRangeUndo(range: range, oldValues: oldValues, newValue: value)
+            bumpDataRevision()
+        } catch {
+            presentError(error.localizedDescription)
+        }
+    }
+
+    func openCRCSheet() {
+        guard let selection else { return }
+        crcInputBytes = bytes(in: selection.start..<(selection.end + 1))
+        showCRCSheet = true
+    }
+
+    func executeTerminalCommand(_ input: String) {
+        terminalHistory.append(TerminalLine(kind: .input, text: input))
+
+        let result = TerminalCommandParser.execute(
+            input,
+            fileSize: fileSize,
+            bytesProvider: { [weak self] range in
+                self?.bytes(in: range) ?? []
+            }
+        )
+
+        switch result {
+        case .output(let text):
+            terminalHistory.append(TerminalLine(kind: .output, text: text))
+        case .navigate(let offset):
+            selection = .single(at: offset)
+            scrollTargetOffset = offset
+            terminalHistory.append(
+                TerminalLine(
+                    kind: .output,
+                    text: "→ 0x\(HexFormatter.offsetString(for: offset))"
+                )
+            )
+        case .error(let message):
+            terminalHistory.append(TerminalLine(kind: .error, text: message))
+        }
     }
 
     func selectByte(at offset: Int, extending: Bool = false) {
@@ -219,6 +323,40 @@ final class HexEditorViewModel {
         undoManager.registerUndo(withTarget: self) { target in
             target.applyByteChange(at: offset, from: newValue, to: oldValue)
             target.registerUndo(at: offset, oldValue: newValue, newValue: oldValue)
+        }
+    }
+
+    private func registerRangeUndo(range: Range<Int>, oldValues: [UInt8], newValue: UInt8) {
+        undoManager.registerUndo(withTarget: self) { target in
+            target.restoreRange(range: range, values: oldValues)
+            target.registerRangeFillRedo(range: range, oldValues: oldValues, newValue: newValue)
+        }
+    }
+
+    private func registerRangeFillRedo(range: Range<Int>, oldValues: [UInt8], newValue: UInt8) {
+        undoManager.registerUndo(withTarget: self) { target in
+            guard let document = target.document else { return }
+            do {
+                _ = try document.mappedFile.replaceBytes(in: range, with: newValue)
+                document.markDirty()
+                target.bumpDataRevision()
+                target.registerRangeUndo(range: range, oldValues: oldValues, newValue: newValue)
+            } catch {
+                target.presentError(error.localizedDescription)
+            }
+        }
+    }
+
+    private func restoreRange(range: Range<Int>, values: [UInt8]) {
+        guard let document, values.count == range.count else { return }
+        do {
+            for (index, offset) in range.enumerated() {
+                try document.mappedFile.replaceByte(at: offset, with: values[index])
+            }
+            document.markDirty()
+            bumpDataRevision()
+        } catch {
+            presentError(error.localizedDescription)
         }
     }
 

@@ -13,6 +13,9 @@ struct HexMacApp: App {
         WindowGroup {
             ContentView(viewModel: viewModel)
         }
+        Settings {
+            SettingsView()
+        }
         .commands {
             CommandGroup(replacing: .newItem) {}
 

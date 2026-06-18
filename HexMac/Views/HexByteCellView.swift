@@ -10,6 +10,7 @@ struct HexByteCellView: View {
     let hexText: String
     let isSelected: Bool
     let isEditing: Bool
+    let highlightColor: HighlightColor?
     @Binding var editingText: String
     var focusedEditOffset: FocusState<Int?>.Binding
     let onCommit: () -> Void
@@ -33,7 +34,17 @@ struct HexByteCellView: View {
             }
         }
         .padding(.vertical, 1)
-        .background(isSelected ? Color.accentColor.opacity(0.35) : Color.clear)
+        .background(backgroundColor)
         .cornerRadius(2)
+    }
+
+    private var backgroundColor: Color {
+        if isSelected {
+            return Color.accentColor.opacity(0.35)
+        }
+        if let highlightColor {
+            return highlightColor.color.opacity(0.3)
+        }
+        return .clear
     }
 }

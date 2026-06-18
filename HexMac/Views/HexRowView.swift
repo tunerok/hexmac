@@ -15,6 +15,7 @@ struct HexRowView: View {
     @Binding var editingHexText: String
     var focusedEditOffset: FocusState<Int?>.Binding
     let textEncoding: TextEncodingMode
+    let highlightColor: (Int) -> HighlightColor?
     let onCommitEdit: () -> Void
     let onCancelEdit: () -> Void
 
@@ -38,6 +39,7 @@ struct HexRowView: View {
                             hexText: HexFormatter.hexPair(for: bytes[column]),
                             isSelected: selection?.contains(offset) ?? false,
                             isEditing: editingOffset == offset,
+                            highlightColor: highlightColor(offset),
                             editingText: $editingHexText,
                             focusedEditOffset: focusedEditOffset,
                             onCommit: onCommitEdit,
@@ -56,20 +58,79 @@ struct HexRowView: View {
             Divider()
                 .padding(.horizontal, HexGridLayout.dividerHorizontalPadding)
 
-            Text(textColumn)
-                .font(.body.monospaced())
+            textColumnView
                 .frame(width: HexFormatter.textColumnWidth(for: bytesPerRow), alignment: .leading)
-                .lineLimit(1)
         }
         .frame(height: HexGridLayout.rowHeight, alignment: .leading)
     }
 
-    private var textColumn: String {
+    private var textColumnView: some View {
+        HStack(spacing: 0) {
+            ForEach(0..<bytesPerRow, id: \.self) { column in
+                let offset = rowOffset + column
+                if offset < fileSize, column < bytes.count {
+                    TextCharacterCellView(
+                        character: textCharacter(at: column),
+                        isSelected: selection?.contains(offset) ?? false,
+                        highlightColor: highlightColor(offset)
+                    )
+                } else if column < bytesPerRow {
+                    Text(" ")
+                        .font(.body.monospaced())
+                        .frame(width: HexGridLayout.textCharacterWidth)
+                }
+            }
+        }
+        .lineLimit(1)
+    }
+
+    private func textCharacter(at column: Int) -> Character {
+        textCharacters[column]
+    }
+
+    private var textCharacters: [Character] {
         switch textEncoding {
         case .ascii:
-            HexFormatter.asciiString(for: bytes)
+            bytes.map { HexFormatter.asciiCharacter(for: $0) }
         case .utf8:
-            HexFormatter.utf8String(for: bytes)
+            utf8CharactersAligned(to: bytes)
         }
+    }
+
+    private func utf8CharactersAligned(to bytes: [UInt8]) -> [Character] {
+        var result = Array(repeating: Character(" "), count: bytes.count)
+        var byteIndex = 0
+        let string = HexFormatter.utf8String(for: bytes)
+        for character in string {
+            guard byteIndex < bytes.count else { break }
+            result[byteIndex] = character
+            byteIndex += character.utf8.count
+        }
+        return result
+    }
+}
+
+private struct TextCharacterCellView: View {
+    let character: Character
+    let isSelected: Bool
+    let highlightColor: HighlightColor?
+
+    var body: some View {
+        Text(String(character))
+            .font(.body.monospaced())
+            .frame(width: HexGridLayout.textCharacterWidth)
+            .padding(.vertical, 1)
+            .background(backgroundColor)
+            .cornerRadius(2)
+    }
+
+    private var backgroundColor: Color {
+        if isSelected {
+            return Color.accentColor.opacity(0.35)
+        }
+        if let highlightColor {
+            return highlightColor.color.opacity(0.3)
+        }
+        return .clear
     }
 }

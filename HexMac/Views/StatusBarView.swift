@@ -36,8 +36,8 @@ struct StatusBarView: View {
                     Text(mode.label).tag(mode)
                 }
             }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 180)
+            .pickerStyle(.menu)
+            .frame(maxWidth: 120)
         }
         .font(.callout.monospaced())
         .padding(.horizontal, 12)

@@ -119,6 +119,22 @@ final class MemoryMappedFile {
         pointer.storeBytes(of: value, toByteOffset: offset, as: UInt8.self)
     }
 
+    func replaceBytes(in range: Range<Int>, with value: UInt8) throws -> [UInt8] {
+        guard !readOnly else { throw MemoryMappedFileError.writeProtected }
+        guard range.lowerBound >= 0, range.upperBound <= size, let pointer else {
+            throw MemoryMappedFileError.outOfBounds
+        }
+
+        var oldValues: [UInt8] = []
+        oldValues.reserveCapacity(range.count)
+        for offset in range {
+            let oldValue = pointer.load(fromByteOffset: offset, as: UInt8.self)
+            oldValues.append(oldValue)
+            pointer.storeBytes(of: value, toByteOffset: offset, as: UInt8.self)
+        }
+        return oldValues
+    }
+
     func sync() throws {
         guard let pointer, size > 0 else { return }
         let result = msync(pointer, size, MS_SYNC)
