@@ -278,11 +278,38 @@ final class HexEditorViewModel {
         return bytes(in: offset..<(offset + count))
     }
 
-    func beginEditing(at offset: Int) {
-        guard let value = byte(at: offset) else { return }
-        editingOffset = offset
-        editingHexText = HexFormatter.hexPair(for: value)
-        selectByte(at: offset)
+    func typeHexDigit(_ character: Character) {
+        guard isDocumentOpen, character.isHexDigit else { return }
+
+        if editingHexText.isEmpty {
+            guard let offset = editingOffset ?? selection?.start, offset < fileSize else { return }
+            editingOffset = offset
+            editingHexText = String(character).uppercased()
+            selection = .single(at: offset)
+            return
+        }
+
+        guard let offset = editingOffset,
+              let newValue = UInt8(editingHexText + String(character), radix: 16) else {
+            return
+        }
+
+        writeByte(at: offset, value: newValue)
+
+        editingHexText = ""
+        let nextOffset = offset + 1
+        if nextOffset < fileSize {
+            editingOffset = nextOffset
+            selection = .single(at: nextOffset)
+        } else {
+            editingOffset = nil
+            selection = .single(at: offset)
+        }
+    }
+
+    func backspaceEditing() {
+        editingHexText = ""
+        editingOffset = nil
     }
 
     func cancelEditing() {
@@ -290,36 +317,17 @@ final class HexEditorViewModel {
         editingHexText = ""
     }
 
-    @discardableResult
-    func commitEditing() -> Bool {
-        guard let offset = editingOffset,
-              let document,
-              let normalized = HexFormatter.normalizedHexInput(editingHexText),
-              let newValue = UInt8(normalized, radix: 16),
-              let oldValue = byte(at: offset) else {
-            if editingHexText.isEmpty {
-                cancelEditing()
-            }
-            return false
-        }
-
-        editingHexText = normalized
-
-        guard newValue != oldValue else {
-            cancelEditing()
-            return true
-        }
+    private func writeByte(at offset: Int, value: UInt8) {
+        guard let document, let oldValue = byte(at: offset) else { return }
+        guard value != oldValue else { return }
 
         do {
-            try document.mappedFile.replaceByte(at: offset, with: newValue)
+            try document.mappedFile.replaceByte(at: offset, with: value)
             document.markDirty()
-            registerUndo(at: offset, oldValue: oldValue, newValue: newValue)
-            cancelEditing()
+            registerUndo(at: offset, oldValue: oldValue, newValue: value)
             bumpDataRevision()
-            return true
         } catch {
             presentError(error.localizedDescription)
-            return false
         }
     }
 

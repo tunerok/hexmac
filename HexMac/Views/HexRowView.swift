@@ -12,12 +12,9 @@ struct HexRowView: View {
     let bytesPerRow: Int
     let selection: HexSelection?
     let editingOffset: Int?
-    @Binding var editingHexText: String
-    var focusedEditOffset: FocusState<Int?>.Binding
+    let editingHexText: String
     let textEncoding: TextEncodingMode
     let highlightColor: (Int) -> HighlightColor?
-    let onCommitEdit: () -> Void
-    let onCancelEdit: () -> Void
 
     private var rowOffset: Int {
         HexFormatter.rowOffset(for: rowIndex, bytesPerRow: bytesPerRow)
@@ -39,11 +36,8 @@ struct HexRowView: View {
                             hexText: HexFormatter.hexPair(for: bytes[column]),
                             isSelected: selection?.contains(offset) ?? false,
                             isEditing: editingOffset == offset,
-                            highlightColor: highlightColor(offset),
-                            editingText: $editingHexText,
-                            focusedEditOffset: focusedEditOffset,
-                            onCommit: onCommitEdit,
-                            onCancel: onCancelEdit
+                            editingHexText: editingHexText,
+                            highlightColor: highlightColor(offset)
                         )
                     } else if column < bytesPerRow {
                         Text("  ")

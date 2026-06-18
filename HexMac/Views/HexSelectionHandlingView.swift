@@ -12,11 +12,12 @@ struct HexSelectionHandlingView: NSViewRepresentable {
     let bytesPerRow: Int
     let editingOffset: Int?
     let selection: HexSelection?
-    let onFinishEditing: () -> Void
     let onBeginSelection: (Int, Bool) -> Void
     let onUpdateSelection: (Int) -> Void
     let onEndSelection: (Int) -> Void
-    let onBeginEdit: (Int) -> Void
+    let onHexDigit: (Character) -> Void
+    let onBackspace: () -> Void
+    let onCancelEdit: () -> Void
     let onAddHighlight: (HighlightColor) -> Void
     let onRemoveHighlight: (Int) -> Void
     let onCopySelection: () -> Void
@@ -51,24 +52,27 @@ struct HexSelectionHandlingView: NSViewRepresentable {
             parent.byteOffset(at: point)
         }
 
-        func handleMouseDown(at point: CGPoint, extending: Bool, clickCount: Int) {
+        func handleMouseDown(at point: CGPoint, extending: Bool) {
             guard let offset = offset(at: point) else { return }
 
-            if clickCount >= 2 {
-                if parent.editingOffset != nil, parent.editingOffset != offset {
-                    parent.onFinishEditing()
-                }
-                parent.onBeginEdit(offset)
-                isDragging = false
-                return
-            }
-
             if parent.editingOffset != nil {
-                parent.onFinishEditing()
+                parent.onCancelEdit()
             }
 
             isDragging = true
             parent.onBeginSelection(offset, extending)
+        }
+
+        func handleHexDigit(_ character: Character) {
+            parent.onHexDigit(character)
+        }
+
+        func handleBackspace() {
+            parent.onBackspace()
+        }
+
+        func handleCancelEdit() {
+            parent.onCancelEdit()
         }
 
         func handleMouseDragged(at point: CGPoint) {
@@ -196,12 +200,11 @@ final class HexSelectionMouseView: NSView {
 
     override var isFlipped: Bool { true }
 
+    override var acceptsFirstResponder: Bool { true }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         let localPoint = convert(point, from: superview)
-        guard let offset = coordinator?.offset(at: localPoint) else {
-            return nil
-        }
-        if offset == coordinator?.parent.editingOffset {
+        guard coordinator?.offset(at: localPoint) != nil else {
             return nil
         }
         return self
@@ -217,9 +220,33 @@ final class HexSelectionMouseView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
         let extending = event.modifierFlags.contains(.shift)
-        coordinator?.handleMouseDown(at: point, extending: extending, clickCount: event.clickCount)
+        coordinator?.handleMouseDown(at: point, extending: extending)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 51:
+            coordinator?.handleBackspace()
+            return
+        case 53:
+            coordinator?.handleCancelEdit()
+            return
+        default:
+            break
+        }
+
+        if let characters = event.charactersIgnoringModifiers,
+           let character = characters.first,
+           characters.count == 1,
+           character.isHexDigit {
+            coordinator?.handleHexDigit(character)
+            return
+        }
+
+        super.keyDown(with: event)
     }
 
     override func mouseDragged(with event: NSEvent) {

@@ -7,7 +7,6 @@ import SwiftUI
 
 struct HexEditorView: View {
     @Bindable var viewModel: HexEditorViewModel
-    @FocusState private var focusedEditOffset: Int?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -93,13 +92,6 @@ struct HexEditorView: View {
             }
             Button(String(localized: "Cancel"), role: .cancel) {}
         }
-        .onChange(of: viewModel.editingOffset) { _, newValue in
-            focusedEditOffset = newValue
-        }
-        .onChange(of: focusedEditOffset) { oldValue, newValue in
-            guard oldValue != nil, newValue == nil, viewModel.editingOffset != nil else { return }
-            finishEditing()
-        }
     }
 
     private var hexGrid: some View {
@@ -111,18 +103,10 @@ struct HexEditorView: View {
             selection: viewModel.selection,
             editingOffset: viewModel.editingOffset,
             scrollTargetOffset: viewModel.scrollTargetOffset,
-            editingHexText: Binding(
-                get: { viewModel.editingHexText },
-                set: { newValue in
-                    let filtered = newValue.uppercased().filter(\.isHexDigit)
-                    viewModel.editingHexText = String(filtered.prefix(2))
-                }
-            ),
-            focusedEditOffset: $focusedEditOffset,
+            editingHexText: viewModel.editingHexText,
             textEncoding: viewModel.textEncoding,
             highlightColor: { viewModel.highlight(at: $0) },
             rowBytes: { viewModel.rowBytes(for: $0) },
-            onFinishEditing: finishEditing,
             onBeginSelection: { offset, extending in
                 viewModel.beginSelection(at: offset, extending: extending)
             },
@@ -132,18 +116,14 @@ struct HexEditorView: View {
             onEndSelection: { offset in
                 viewModel.endSelection(at: offset)
             },
-            onBeginEdit: { offset in
-                viewModel.beginEditing(at: offset)
-                focusedEditOffset = offset
+            onHexDigit: { character in
+                viewModel.typeHexDigit(character)
             },
-            onCommitEdit: {
-                if viewModel.commitEditing() {
-                    advanceAfterEdit()
-                }
+            onBackspace: {
+                viewModel.backspaceEditing()
             },
             onCancelEdit: {
                 viewModel.cancelEditing()
-                focusedEditOffset = nil
             },
             onAddHighlight: { color in
                 viewModel.addHighlight(color: color)
@@ -166,26 +146,8 @@ struct HexEditorView: View {
         )
     }
 
-    private func finishEditing() {
-        guard viewModel.editingOffset != nil else { return }
-        if !viewModel.commitEditing() {
-            viewModel.cancelEditing()
-        }
-        focusedEditOffset = nil
-    }
-
     private var inspectorBytes: [UInt8] {
         guard let selection = viewModel.selection else { return [] }
         return viewModel.bytes(in: selection.start..<(selection.end + 1))
-    }
-
-    private func advanceAfterEdit() {
-        guard let offset = viewModel.selectedOffset,
-              offset + 1 < viewModel.fileSize else {
-            focusedEditOffset = nil
-            return
-        }
-        viewModel.beginEditing(at: offset + 1)
-        focusedEditOffset = offset + 1
     }
 }

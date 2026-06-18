@@ -68,16 +68,6 @@ enum HexFormatter {
     static func formattedFileSize(_ size: Int) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
     }
-
-    static func normalizedHexInput(_ input: String) -> String? {
-        let filtered = input.uppercased().filter(\.isHexDigit)
-        guard !filtered.isEmpty else { return nil }
-
-        if filtered.count == 1 {
-            return "0\(filtered)"
-        }
-        return String(filtered.prefix(2))
-    }
 }
 
 private extension String {

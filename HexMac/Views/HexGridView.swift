@@ -13,17 +13,15 @@ struct HexGridView: View {
     let selection: HexSelection?
     let editingOffset: Int?
     let scrollTargetOffset: Int?
-    @Binding var editingHexText: String
-    var focusedEditOffset: FocusState<Int?>.Binding
+    let editingHexText: String
     let textEncoding: TextEncodingMode
     let highlightColor: (Int) -> HighlightColor?
     let rowBytes: (Int) -> [UInt8]
-    let onFinishEditing: () -> Void
     let onBeginSelection: (Int, Bool) -> Void
     let onUpdateSelection: (Int) -> Void
     let onEndSelection: (Int) -> Void
-    let onBeginEdit: (Int) -> Void
-    let onCommitEdit: () -> Void
+    let onHexDigit: (Character) -> Void
+    let onBackspace: () -> Void
     let onCancelEdit: () -> Void
     let onAddHighlight: (HighlightColor) -> Void
     let onRemoveHighlight: (Int) -> Void
@@ -51,12 +49,9 @@ struct HexGridView: View {
                                         bytesPerRow: bytesPerRow,
                                         selection: selection,
                                         editingOffset: editingOffset,
-                                        editingHexText: $editingHexText,
-                                        focusedEditOffset: focusedEditOffset,
+                                        editingHexText: editingHexText,
                                         textEncoding: textEncoding,
-                                        highlightColor: highlightColor,
-                                        onCommitEdit: onCommitEdit,
-                                        onCancelEdit: onCancelEdit
+                                        highlightColor: highlightColor
                                     )
                                     .id(rowIndex)
                                 }
@@ -68,11 +63,12 @@ struct HexGridView: View {
                                     bytesPerRow: bytesPerRow,
                                     editingOffset: editingOffset,
                                     selection: selection,
-                                    onFinishEditing: onFinishEditing,
                                     onBeginSelection: onBeginSelection,
                                     onUpdateSelection: onUpdateSelection,
                                     onEndSelection: onEndSelection,
-                                    onBeginEdit: onBeginEdit,
+                                    onHexDigit: onHexDigit,
+                                    onBackspace: onBackspace,
+                                    onCancelEdit: onCancelEdit,
                                     onAddHighlight: onAddHighlight,
                                     onRemoveHighlight: onRemoveHighlight,
                                     onCopySelection: onCopySelection,

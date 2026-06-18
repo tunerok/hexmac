@@ -10,35 +10,36 @@ struct HexByteCellView: View {
     let hexText: String
     let isSelected: Bool
     let isEditing: Bool
+    let editingHexText: String
     let highlightColor: HighlightColor?
-    @Binding var editingText: String
-    var focusedEditOffset: FocusState<Int?>.Binding
-    let onCommit: () -> Void
-    let onCancel: () -> Void
 
     var body: some View {
-        Group {
-            if isEditing {
-                TextField("", text: $editingText)
-                    .font(.body.monospaced())
-                    .multilineTextAlignment(.center)
-                    .frame(width: HexGridLayout.cellWidth)
-                    .textFieldStyle(.plain)
-                    .focused(focusedEditOffset, equals: offset)
-                    .onSubmit(onCommit)
-                    .onExitCommand(perform: onCancel)
-            } else {
-                Text(hexText)
-                    .font(.body.monospaced())
-                    .frame(width: HexGridLayout.cellWidth)
+        Text(displayText)
+            .font(.body.monospaced())
+            .foregroundStyle(isEditing ? Color.accentColor : Color.primary)
+            .frame(width: HexGridLayout.cellWidth)
+            .padding(.vertical, 1)
+            .background(backgroundColor)
+            .cornerRadius(2)
+            .overlay {
+                if isEditing {
+                    RoundedRectangle(cornerRadius: 2)
+                        .strokeBorder(Color.accentColor, lineWidth: 1)
+                }
             }
+    }
+
+    private var displayText: String {
+        guard isEditing, !editingHexText.isEmpty else {
+            return hexText
         }
-        .padding(.vertical, 1)
-        .background(backgroundColor)
-        .cornerRadius(2)
+        return "\(editingHexText)_"
     }
 
     private var backgroundColor: Color {
+        if isEditing {
+            return Color.accentColor.opacity(0.2)
+        }
         if isSelected {
             return Color.accentColor.opacity(0.35)
         }
