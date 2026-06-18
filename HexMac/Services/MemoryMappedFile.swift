@@ -12,6 +12,7 @@ enum MemoryMappedFileError: Error, LocalizedError {
     case outOfBounds
     case writeProtected
     case syncFailed
+    case resizeFailed
 
     var errorDescription: String? {
         switch self {
@@ -25,6 +26,8 @@ enum MemoryMappedFileError: Error, LocalizedError {
             String(localized: "File is read-only")
         case .syncFailed:
             String(localized: "Failed to sync file to disk")
+        case .resizeFailed:
+            String(localized: "Failed to resize file")
         }
     }
 }
@@ -35,7 +38,7 @@ final class MemoryMappedFile {
     private var hasSecurityScope: Bool
 
     let url: URL
-    let size: Int
+    private(set) var size: Int
     let readOnly: Bool
 
     static func open(url: URL, readOnly: Bool = true) throws -> MemoryMappedFile {
@@ -133,6 +136,36 @@ final class MemoryMappedFile {
             pointer.storeBytes(of: value, toByteOffset: offset, as: UInt8.self)
         }
         return oldValues
+    }
+
+    func appendByte(_ value: UInt8) throws {
+        try resize(to: size + 1)
+        try replaceByte(at: size - 1, with: value)
+    }
+
+    func resize(to newSize: Int) throws {
+        guard !readOnly else { throw MemoryMappedFileError.writeProtected }
+        guard newSize >= 0 else { throw MemoryMappedFileError.outOfBounds }
+        guard newSize != size else { return }
+
+        if let pointer, size > 0 {
+            munmap(pointer, size)
+            self.pointer = nil
+        }
+
+        guard ftruncate(fd, off_t(newSize)) == 0 else {
+            throw MemoryMappedFileError.resizeFailed
+        }
+
+        if newSize > 0 {
+            let mapped = mmap(nil, newSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0)
+            guard mapped != MAP_FAILED else {
+                throw MemoryMappedFileError.mmapFailed
+            }
+            pointer = mapped
+        }
+
+        size = newSize
     }
 
     func sync() throws {

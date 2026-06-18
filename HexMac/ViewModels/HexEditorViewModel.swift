@@ -27,6 +27,7 @@ final class HexEditorViewModel {
     var terminalHistory: [TerminalLine] = []
     var editingOffset: Int?
     var editingHexText = ""
+    @ObservationIgnored private var editingAppendedByte = false
     var errorMessage: String?
     var showError = false
     private(set) var dataRevision = 0
@@ -101,6 +102,7 @@ final class HexEditorViewModel {
         terminalHistory = []
         editingOffset = nil
         editingHexText = ""
+        editingAppendedByte = false
         undoManager.removeAllActions()
     }
 
@@ -282,10 +284,22 @@ final class HexEditorViewModel {
         guard isDocumentOpen, character.isHexDigit else { return }
 
         if editingHexText.isEmpty {
-            guard let offset = editingOffset ?? selection?.start, offset < fileSize else { return }
-            editingOffset = offset
+            guard let offset = editingOffset ?? selection?.start,
+                  offset >= 0, offset <= fileSize else { return }
+
+            if offset >= fileSize {
+                guard appendPlaceholderByte() else { return }
+                editingOffset = fileSize - 1
+                editingAppendedByte = true
+            } else {
+                editingOffset = offset
+                editingAppendedByte = false
+            }
+
             editingHexText = String(character).uppercased()
-            selection = .single(at: offset)
+            if let editingOffset {
+                selection = .single(at: editingOffset)
+            }
             return
         }
 
@@ -294,38 +308,98 @@ final class HexEditorViewModel {
             return
         }
 
-        writeByte(at: offset, value: newValue)
+        commitByte(at: offset, value: newValue, wasAppended: editingAppendedByte)
 
         editingHexText = ""
+        editingAppendedByte = false
         let nextOffset = offset + 1
+        editingOffset = nextOffset
         if nextOffset < fileSize {
-            editingOffset = nextOffset
             selection = .single(at: nextOffset)
-        } else {
-            editingOffset = nil
+        } else if offset < fileSize {
             selection = .single(at: offset)
         }
     }
 
     func backspaceEditing() {
+        discardUncommittedPlaceholder()
         editingHexText = ""
         editingOffset = nil
     }
 
     func cancelEditing() {
+        discardUncommittedPlaceholder()
         editingOffset = nil
         editingHexText = ""
     }
 
-    private func writeByte(at offset: Int, value: UInt8) {
-        guard let document, let oldValue = byte(at: offset) else { return }
-        guard value != oldValue else { return }
+    private func commitByte(at offset: Int, value: UInt8, wasAppended: Bool) {
+        guard let document else { return }
 
         do {
-            try document.mappedFile.replaceByte(at: offset, with: value)
+            if wasAppended {
+                let oldValue = byte(at: offset) ?? 0
+                if value != oldValue {
+                    try document.mappedFile.replaceByte(at: offset, with: value)
+                }
+                document.markDirty()
+                registerAppendUndo(at: offset, value: value)
+                bumpDataRevision()
+            } else {
+                guard let oldValue = byte(at: offset) else { return }
+                guard value != oldValue else { return }
+                try document.mappedFile.replaceByte(at: offset, with: value)
+                document.markDirty()
+                registerUndo(at: offset, oldValue: oldValue, newValue: value)
+                bumpDataRevision()
+            }
+        } catch {
+            presentError(error.localizedDescription)
+        }
+    }
+
+    private func appendByte(_ value: UInt8) {
+        guard let document else { return }
+
+        do {
+            try document.mappedFile.appendByte(value)
             document.markDirty()
-            registerUndo(at: offset, oldValue: oldValue, newValue: value)
+            registerAppendUndo(at: fileSize - 1, value: value)
             bumpDataRevision()
+        } catch {
+            presentError(error.localizedDescription)
+        }
+    }
+
+    @discardableResult
+    private func appendPlaceholderByte() -> Bool {
+        guard let document else { return false }
+
+        do {
+            try document.mappedFile.appendByte(0)
+            document.markDirty()
+            bumpDataRevision()
+            return true
+        } catch {
+            presentError(error.localizedDescription)
+            return false
+        }
+    }
+
+    private func discardUncommittedPlaceholder() {
+        guard editingAppendedByte, let offset = editingOffset else { return }
+        editingAppendedByte = false
+
+        guard let document else { return }
+        do {
+            try document.mappedFile.resize(to: offset)
+            document.markDirty()
+            bumpDataRevision()
+            if fileSize > 0 {
+                selection = .single(at: min(offset, fileSize - 1))
+            } else {
+                selection = nil
+            }
         } catch {
             presentError(error.localizedDescription)
         }
@@ -368,6 +442,36 @@ final class HexEditorViewModel {
         undoManager.registerUndo(withTarget: self) { target in
             target.applyByteChange(at: offset, from: newValue, to: oldValue)
             target.registerUndo(at: offset, oldValue: newValue, newValue: oldValue)
+        }
+    }
+
+    private func registerAppendUndo(at offset: Int, value: UInt8) {
+        undoManager.registerUndo(withTarget: self) { target in
+            target.undoAppend(at: offset)
+            target.registerAppendRedo(at: offset, value: value)
+        }
+    }
+
+    private func registerAppendRedo(at offset: Int, value: UInt8) {
+        undoManager.registerUndo(withTarget: self) { target in
+            target.appendByte(value)
+        }
+    }
+
+    private func undoAppend(at offset: Int) {
+        guard let document, offset >= 0 else { return }
+        do {
+            try document.mappedFile.resize(to: offset)
+            document.markDirty()
+            cancelEditing()
+            if fileSize > 0 {
+                selection = .single(at: min(offset, fileSize - 1))
+            } else {
+                selection = nil
+            }
+            bumpDataRevision()
+        } catch {
+            presentError(error.localizedDescription)
         }
     }
 
