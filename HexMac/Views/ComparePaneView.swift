@@ -57,38 +57,18 @@ struct ComparePaneView: View {
     }
 
     private var compareToolbar: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 4) {
-                Text(pane.comparisonLeftName)
-                    .lineLimit(1)
-                Text("↔")
-                    .foregroundStyle(.tertiary)
-                Text(pane.comparisonRightName)
-                    .lineLimit(1)
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .truncationMode(.middle)
-
-            Spacer(minLength: 8)
-
-            Menu {
-                Button(String(localized: "Export as Text (.txt)")) {
-                    pane.exportComparisonDiff(format: .text)
-                }
-                .disabled(pane.isComparisonExporting)
-                Button(String(localized: "Export as CSV (.csv)")) {
-                    pane.exportComparisonDiff(format: .csv)
-                }
-                .disabled(pane.isComparisonExporting)
-            } label: {
-                Label(String(localized: "Export Diff…"), systemImage: "square.and.arrow.up")
-                    .labelStyle(.iconOnly)
-                    .font(.caption)
-            }
-            .menuStyle(.borderlessButton)
-            .help(String(localized: "Export Diff…"))
+        HStack(spacing: 4) {
+            Text(pane.comparisonLeftName)
+                .lineLimit(1)
+            Text("↔")
+                .foregroundStyle(.tertiary)
+            Text(pane.comparisonRightName)
+                .lineLimit(1)
         }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .truncationMode(.middle)
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 10)
         .padding(.vertical, 3)
         .background(.bar)

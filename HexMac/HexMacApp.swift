@@ -23,6 +23,7 @@ struct HexMacApp: App {
             editMenuCommands
             viewMenuCommands
             toolsMenuCommands
+            helpMenuCommands
         }
     }
 
@@ -31,7 +32,14 @@ struct HexMacApp: App {
         CommandGroup(replacing: .appInfo) {
             Button(String(localized: "About HexMac")) {
                 NSApplication.shared.orderFrontStandardAboutPanel(
-                    options: [NSApplication.AboutPanelOptionKey.credits: NSAttributedString()]
+                    options: [
+                        NSApplication.AboutPanelOptionKey.applicationName: AppInfo.name,
+                        NSApplication.AboutPanelOptionKey.applicationVersion: AppInfo.version,
+                        NSApplication.AboutPanelOptionKey.credits: NSAttributedString(
+                            string: String(localized: "Native macOS hex editor for inspecting, editing, and analyzing binary files."),
+                            attributes: [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)]
+                        ),
+                    ]
                 )
             }
         }
@@ -215,6 +223,16 @@ struct HexMacApp: App {
                 workspace.openCRCSheet()
             }
             .disabled(!workspace.hasSelection)
+        }
+    }
+
+    @CommandsBuilder
+    private var helpMenuCommands: some Commands {
+        CommandGroup(replacing: .help) {
+            Button(String(localized: "HexMac Help")) {
+                workspace.showHelp = true
+            }
+            .keyboardShortcut("?", modifiers: .command)
         }
     }
 }

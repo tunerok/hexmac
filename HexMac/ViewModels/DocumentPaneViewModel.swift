@@ -49,7 +49,6 @@ final class DocumentPaneViewModel: Identifiable {
     private(set) var dataRevision = 0
     private(set) var comparisonDiffIndex: CompareDiffIndex?
     private(set) var isDiffMapLoading = false
-    private(set) var isComparisonExporting = false
     @ObservationIgnored private var comparisonDiffMapGeneration = 0
 
     private let undoManager = UndoManager()
@@ -210,74 +209,6 @@ final class DocumentPaneViewModel: Identifiable {
                       case .comparison = self.paneMode else { return }
                 self.comparisonDiffIndex = index
                 self.isDiffMapLoading = false
-            }
-        }
-    }
-
-    func exportComparisonDiff(format: CompareDiffExportFormat) {
-        guard case .comparison(let left, let right) = paneMode else { return }
-        guard !isComparisonExporting else { return }
-
-        let leftBase = (left.displayName as NSString).deletingPathExtension
-        let rightBase = (right.displayName as NSString).deletingPathExtension
-        let suggestedName = "comparison_\(leftBase)_vs_\(rightBase).\(format.fileExtension)"
-
-        guard let url = FileAccessService.saveFilePanel(
-            suggestedName: suggestedName,
-            fileExtension: format.fileExtension
-        ) else { return }
-
-        let diffIndex = comparisonDiffIndex
-        let leftFile = left.mappedFile
-        let rightFile = right.mappedFile
-        let leftSize = left.fileSize
-        let rightSize = right.fileSize
-        let leftName = left.displayName
-        let rightName = right.displayName
-
-        isComparisonExporting = true
-
-        Task.detached {
-            let entries: [DiffEntry]
-            if let diffIndex {
-                entries = ByteCompareService.collectDiffEntries(
-                    from: diffIndex,
-                    leftSize: leftSize,
-                    rightSize: rightSize,
-                    leftByte: { offset in try? leftFile.byte(at: offset) },
-                    rightByte: { offset in try? rightFile.byte(at: offset) }
-                )
-            } else {
-                entries = ByteCompareService.collectDiffEntries(
-                    leftSize: leftSize,
-                    rightSize: rightSize,
-                    leftByte: { offset in try? leftFile.byte(at: offset) },
-                    rightByte: { offset in try? rightFile.byte(at: offset) }
-                )
-            }
-
-            let content: String
-            switch format {
-            case .text:
-                content = ByteCompareService.formatTextReport(
-                    entries: entries,
-                    leftName: leftName,
-                    rightName: rightName
-                )
-            case .csv:
-                content = ByteCompareService.formatCSV(entries: entries)
-            }
-
-            do {
-                try content.write(to: url, atomically: true, encoding: .utf8)
-                await MainActor.run {
-                    self.isComparisonExporting = false
-                }
-            } catch {
-                await MainActor.run {
-                    self.isComparisonExporting = false
-                    self.presentError(error.localizedDescription)
-                }
             }
         }
     }
@@ -1054,7 +985,6 @@ final class DocumentPaneViewModel: Identifiable {
         comparisonActiveSide = .left
         comparisonDiffIndex = nil
         isDiffMapLoading = false
-        isComparisonExporting = false
         comparisonDiffMapGeneration &+= 1
     }
 

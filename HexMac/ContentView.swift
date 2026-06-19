@@ -33,6 +33,11 @@ struct ContentView: View {
             }
         }
         .onDrop(of: [.fileURL], isTargeted: nil, perform: handleDrop)
+        .sheet(isPresented: $workspace.showHelp) {
+            HelpView {
+                workspace.showHelp = false
+            }
+        }
         .alert(
             String(localized: "Error"),
             isPresented: Binding(

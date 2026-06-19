@@ -92,18 +92,6 @@ struct CompareRowContext {
     let rightHighlights: [HighlightColor?]
 }
 
-enum CompareDiffExportFormat {
-    case text
-    case csv
-
-    var fileExtension: String {
-        switch self {
-        case .text: "txt"
-        case .csv: "csv"
-        }
-    }
-}
-
 enum ByteCompareService {
     nonisolated static let defaultBucketCount = 400
 

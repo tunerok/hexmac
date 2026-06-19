@@ -30,6 +30,8 @@ final class WorkspaceViewModel {
     var showComparePicker = false
     var comparePickerPresetLeftPaneID: UUID?
 
+    var showHelp = false
+
     var hasOpenPanes: Bool {
         !allPanes().isEmpty
     }
