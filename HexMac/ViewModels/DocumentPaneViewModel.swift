@@ -206,6 +206,47 @@ final class DocumentPaneViewModel: Identifiable {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    func saveSelectionAsBinary() {
+        guard let selection else { return }
+        let data = bytes(in: selection.start..<(selection.end + 1))
+        guard !data.isEmpty else { return }
+
+        let suggestedName = selectionExportSuggestedName(fileExtension: "bin")
+        guard let url = FileAccessService.saveFilePanel(
+            suggestedName: suggestedName,
+            fileExtension: "bin"
+        ) else {
+            return
+        }
+
+        do {
+            try Data(data).write(to: url, options: .atomic)
+        } catch {
+            presentError(error.localizedDescription)
+        }
+    }
+
+    func saveSelectionAsHex() {
+        guard let selection else { return }
+        let data = bytes(in: selection.start..<(selection.end + 1))
+        guard !data.isEmpty else { return }
+
+        let suggestedName = selectionExportSuggestedName(fileExtension: "hex")
+        guard let url = FileAccessService.saveFilePanel(
+            suggestedName: suggestedName,
+            fileExtension: "hex"
+        ) else {
+            return
+        }
+
+        let text = data.map { HexFormatter.hexPair(for: $0) }.joined()
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            presentError(error.localizedDescription)
+        }
+    }
+
     func requestFillSelection() {
         guard selection != nil else { return }
         showFillDialog = true
@@ -595,6 +636,17 @@ final class DocumentPaneViewModel: Identifiable {
 
     private func bumpDataRevision() {
         dataRevision &+= 1
+    }
+
+    private func selectionExportSuggestedName(fileExtension: String) -> String {
+        let baseName = document?.displayName ?? String(localized: "selection")
+        let nameWithoutExtension = (baseName as NSString).deletingPathExtension
+        guard let selection else {
+            return "\(nameWithoutExtension).\(fileExtension)"
+        }
+        let start = HexFormatter.offsetString(for: selection.start)
+        let end = HexFormatter.offsetString(for: selection.end)
+        return "\(nameWithoutExtension)_\(start)-\(end).\(fileExtension)"
     }
 
     private func presentError(_ message: String) {

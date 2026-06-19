@@ -25,6 +25,8 @@ struct HexSelectionHandlingView: NSViewRepresentable {
     let onCalculateCRC: () -> Void
     let onCalculateHash: () -> Void
     let onShowBinary: () -> Void
+    let onSaveSelectionAsBinary: () -> Void
+    let onSaveSelectionAsHex: () -> Void
     let highlightColor: (Int) -> HighlightColor?
 
     func makeNSView(context: Context) -> HexSelectionMouseView {
@@ -140,6 +142,32 @@ struct HexSelectionHandlingView: NSViewRepresentable {
                 binaryItem.target = self
                 menu.addItem(binaryItem)
 
+                let saveMenu = NSMenuItem(
+                    title: String(localized: "Save Selection As…"),
+                    action: nil,
+                    keyEquivalent: ""
+                )
+                let saveSubmenu = NSMenu()
+
+                let saveBinaryItem = NSMenuItem(
+                    title: String(localized: "Binary (.bin)"),
+                    action: #selector(saveSelectionAsBinary(_:)),
+                    keyEquivalent: ""
+                )
+                saveBinaryItem.target = self
+                saveSubmenu.addItem(saveBinaryItem)
+
+                let saveHexItem = NSMenuItem(
+                    title: String(localized: "Hex (.hex)"),
+                    action: #selector(saveSelectionAsHex(_:)),
+                    keyEquivalent: ""
+                )
+                saveHexItem.target = self
+                saveSubmenu.addItem(saveHexItem)
+
+                saveMenu.submenu = saveSubmenu
+                menu.addItem(saveMenu)
+
                 menu.addItem(.separator())
             }
 
@@ -206,6 +234,14 @@ struct HexSelectionHandlingView: NSViewRepresentable {
 
         @objc func showBinary(_ sender: NSMenuItem) {
             parent.onShowBinary()
+        }
+
+        @objc func saveSelectionAsBinary(_ sender: NSMenuItem) {
+            parent.onSaveSelectionAsBinary()
+        }
+
+        @objc func saveSelectionAsHex(_ sender: NSMenuItem) {
+            parent.onSaveSelectionAsHex()
         }
     }
 

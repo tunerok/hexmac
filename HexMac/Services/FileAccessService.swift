@@ -23,15 +23,23 @@ enum FileAccessService {
     }
 
     @MainActor
-    static func saveFilePanel(suggestedName: String) -> URL? {
+    static func saveFilePanel(suggestedName: String, fileExtension: String? = nil) -> URL? {
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
         panel.nameFieldStringValue = suggestedName
-        panel.allowedContentTypes = [.data]
+        if let fileExtension {
+            panel.allowedContentTypes = [contentType(for: fileExtension)]
+        } else {
+            panel.allowedContentTypes = [.data]
+        }
 
         guard panel.runModal() == .OK, let url = panel.url else {
             return nil
         }
         return url
+    }
+
+    private static func contentType(for fileExtension: String) -> UTType {
+        UTType(filenameExtension: fileExtension) ?? .data
     }
 }

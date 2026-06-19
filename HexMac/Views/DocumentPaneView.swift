@@ -81,6 +81,12 @@ struct DocumentPaneView: View {
             onShowBinary: {
                 pane.openBinarySheet()
             },
+            onSaveSelectionAsBinary: {
+                pane.saveSelectionAsBinary()
+            },
+            onSaveSelectionAsHex: {
+                pane.saveSelectionAsHex()
+            },
             onScrollTargetHandled: {
                 pane.clearScrollTarget()
             }
