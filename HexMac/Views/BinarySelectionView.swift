@@ -15,6 +15,13 @@ struct BinarySelectionView: View {
 
     @State private var integerInterpretations: [BinaryIntegerInterpretation] = []
     @State private var copyAlertMessage: String?
+    @State private var copyPlainBinary = true
+    @State private var outputAreaWidth: CGFloat = 0
+
+    private static let monospacedCharacterWidth: CGFloat = {
+        let font = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        return ceil(("0" as NSString).size(withAttributes: [.font: font]).width)
+    }()
 
     private var displayedByteCount: Int {
         BinarySelectionFormatter.displayedByteCount(for: byteCount)
@@ -71,7 +78,22 @@ struct BinarySelectionView: View {
                                     .font(.body.monospaced())
                                     .textSelection(.enabled)
 
-                                Text(interpretation.binaryText)
+                                Group {
+                                    if copyPlainBinary {
+                                        Text(
+                                            interpretationBinaryText(
+                                                interpretation,
+                                                forWidth: outputAreaWidth
+                                            )
+                                        )
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    } else {
+                                        ScrollView(.horizontal) {
+                                            Text(interpretation.formattedBinaryText)
+                                                .fixedSize(horizontal: true, vertical: false)
+                                        }
+                                    }
+                                }
                                     .font(.body.monospaced())
                                     .textSelection(.enabled)
                             }
@@ -82,16 +104,36 @@ struct BinarySelectionView: View {
                 .formStyle(.grouped)
             }
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(0..<lineCount, id: \.self) { lineIndex in
-                        Text(formattedLine(at: lineIndex))
-                            .font(.body.monospaced())
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+            GeometryReader { geometry in
+                Group {
+                    if copyPlainBinary {
+                        ScrollView(.vertical) {
+                            Text(displayText(forWidth: geometry.size.width, byteCount: displayedByteCount))
+                                .font(.body.monospaced())
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 4)
+                        }
+                    } else {
+                        ScrollView([.horizontal, .vertical]) {
+                            LazyVStack(alignment: .leading, spacing: 8) {
+                                ForEach(0..<lineCount, id: \.self) { lineIndex in
+                                    Text(formattedLine(at: lineIndex))
+                                        .font(.body.monospaced())
+                                        .textSelection(.enabled)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
                     }
                 }
-                .padding(.vertical, 4)
+                .onAppear {
+                    outputAreaWidth = geometry.size.width
+                }
+                .onChange(of: geometry.size.width) { _, newWidth in
+                    outputAreaWidth = newWidth
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(.background.secondary)
@@ -102,6 +144,15 @@ struct BinarySelectionView: View {
                     copyToPasteboard()
                 }
 
+                Toggle(
+                    String(
+                        localized: "Digits only",
+                        comment: "Binary view copy option; copies 0/1 without offsets or separators"
+                    ),
+                    isOn: $copyPlainBinary
+                )
+                .toggleStyle(.checkbox)
+
                 Spacer()
 
                 Button(String(localized: "Close")) {
@@ -111,7 +162,7 @@ struct BinarySelectionView: View {
             }
         }
         .padding(20)
-        .frame(minWidth: 560, idealWidth: 720, minHeight: 420, idealHeight: 560)
+        .frame(minWidth: 672, idealWidth: 864, minHeight: 420, idealHeight: 560)
         .onAppear {
             loadIntegerInterpretations()
         }
@@ -128,6 +179,22 @@ struct BinarySelectionView: View {
         }
     }
 
+    private func binaryText(byteCount: Int) -> String {
+        if copyPlainBinary {
+            return BinarySelectionFormatter.plainBinaryText(
+                selectionStart: selectionStart,
+                byteCount: byteCount,
+                bytesProvider: bytesProvider
+            )
+        }
+
+        return BinarySelectionFormatter.fullText(
+            selectionStart: selectionStart,
+            byteCount: byteCount,
+            bytesProvider: bytesProvider
+        )
+    }
+
     private func formattedLine(at lineIndex: Int) -> String {
         let relativeRange = BinarySelectionFormatter.relativeLineRange(
             for: lineIndex,
@@ -139,6 +206,34 @@ struct BinarySelectionView: View {
             bytes: bytes,
             lineStartOffset: absoluteRange.lowerBound
         )
+    }
+
+    private func displayText(forWidth width: CGFloat, byteCount: Int) -> String {
+        let text = binaryText(byteCount: byteCount)
+        guard copyPlainBinary else { return text }
+
+        let charactersPerLine = charactersPerLine(forWidth: width)
+        return BinarySelectionFormatter.wrappedPlainBinaryText(text, charactersPerLine: charactersPerLine)
+    }
+
+    private func interpretationBinaryText(
+        _ interpretation: BinaryIntegerInterpretation,
+        forWidth width: CGFloat
+    ) -> String {
+        if copyPlainBinary {
+            let charactersPerLine = charactersPerLine(forWidth: width)
+            return BinarySelectionFormatter.wrappedPlainBinaryText(
+                interpretation.plainBinaryText,
+                charactersPerLine: charactersPerLine
+            )
+        }
+
+        return interpretation.formattedBinaryText
+    }
+
+    private func charactersPerLine(forWidth width: CGFloat) -> Int {
+        guard width > 0, Self.monospacedCharacterWidth > 0 else { return 64 }
+        return max(1, Int(width / Self.monospacedCharacterWidth))
     }
 
     private func loadIntegerInterpretations() {
@@ -160,11 +255,7 @@ struct BinarySelectionView: View {
             return
         }
 
-        let text = BinarySelectionFormatter.fullText(
-            selectionStart: selectionStart,
-            byteCount: copyByteCount,
-            bytesProvider: bytesProvider
-        )
+        let text = binaryText(byteCount: copyByteCount)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }

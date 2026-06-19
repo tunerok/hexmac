@@ -8,7 +8,8 @@ import Foundation
 struct BinaryIntegerInterpretation: Identifiable {
     let endianness: String
     let decimalValue: String
-    let binaryText: String
+    let formattedBinaryText: String
+    let plainBinaryText: String
 
     var id: String { endianness }
 }
@@ -54,7 +55,12 @@ enum BinarySelectionFormatter {
                 BinaryIntegerInterpretation(
                     endianness: String(localized: "Value"),
                     decimalValue: "\(littleEndianValue)",
-                    binaryText: littleEndianBinary
+                    formattedBinaryText: littleEndianBinary,
+                    plainBinaryText: plainBinaryGroups(
+                        for: littleEndianValue,
+                        byteCount: bytes.count,
+                        littleEndian: true
+                    )
                 ),
             ]
         }
@@ -63,14 +69,50 @@ enum BinarySelectionFormatter {
             BinaryIntegerInterpretation(
                 endianness: String(localized: "Little-endian"),
                 decimalValue: "\(littleEndianValue)",
-                binaryText: littleEndianBinary
+                formattedBinaryText: littleEndianBinary,
+                plainBinaryText: plainBinaryGroups(
+                    for: littleEndianValue,
+                    byteCount: bytes.count,
+                    littleEndian: true
+                )
             ),
             BinaryIntegerInterpretation(
                 endianness: String(localized: "Big-endian"),
                 decimalValue: "\(bigEndianValue)",
-                binaryText: bigEndianBinary
+                formattedBinaryText: bigEndianBinary,
+                plainBinaryText: plainBinaryGroups(
+                    for: bigEndianValue,
+                    byteCount: bytes.count,
+                    littleEndian: false
+                )
             ),
         ]
+    }
+
+    static func plainBinaryText(
+        selectionStart: Int,
+        byteCount: Int,
+        bytesProvider: (Range<Int>) -> [UInt8]
+    ) -> String {
+        guard byteCount > 0 else { return "" }
+        let bytes = bytesProvider(selectionStart..<(selectionStart + byteCount))
+        return HexFormatter.binaryString(for: bytes, bitWidth: byteCount * 8)
+    }
+
+    static func wrappedPlainBinaryText(_ text: String, charactersPerLine: Int) -> String {
+        guard charactersPerLine > 0, !text.isEmpty else { return text }
+
+        var lines: [String] = []
+        lines.reserveCapacity((text.count + charactersPerLine - 1) / charactersPerLine)
+
+        var index = text.startIndex
+        while index < text.endIndex {
+            let end = text.index(index, offsetBy: charactersPerLine, limitedBy: text.endIndex) ?? text.endIndex
+            lines.append(String(text[index..<end]))
+            index = end
+        }
+
+        return lines.joined(separator: "\n")
     }
 
     static func fullText(
@@ -103,11 +145,20 @@ enum BinarySelectionFormatter {
     }
 
     private static func binaryGroups(for value: UInt64, byteCount: Int, littleEndian: Bool) -> String {
-        let groups = (0..<byteCount).map { index in
+        (0..<byteCount).map { index in
             let byteIndex = littleEndian ? index : (byteCount - 1 - index)
             let byte = UInt8((value >> (byteIndex * 8)) & 0xFF)
             return HexFormatter.binaryString(for: byte)
         }
-        return groups.joined(separator: byteSeparator)
+        .joined(separator: byteSeparator)
+    }
+
+    private static func plainBinaryGroups(for value: UInt64, byteCount: Int, littleEndian: Bool) -> String {
+        (0..<byteCount).map { index in
+            let byteIndex = littleEndian ? index : (byteCount - 1 - index)
+            let byte = UInt8((value >> (byteIndex * 8)) & 0xFF)
+            return HexFormatter.binaryString(for: byte)
+        }
+        .joined()
     }
 }
