@@ -137,6 +137,33 @@ final class TerminalCommandParserTests: XCTestCase {
             return XCTFail("Expected output")
         }
         XCTAssertTrue(text.contains("0x00000001"))
+        XCTAssertTrue(text.contains("matches"))
+    }
+
+    func testFindASCII() {
+        let bytes: [UInt8] = Array("ababcab".utf8)
+        let result = TerminalCommandParser.execute(
+            "find --ascii ab",
+            fileSize: bytes.count,
+            bytesProvider: { range in
+                Array(bytes[range])
+            }
+        )
+        guard case .output(let text) = result else {
+            return XCTFail("Expected output")
+        }
+        XCTAssertTrue(text.contains("0x"))
+        XCTAssertTrue(text.contains("3 matches"))
+    }
+
+    func testFindNotFound() {
+        let result = TerminalCommandParser.execute("find FF FF", fileSize: 10, bytesProvider: { _ in
+            [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09]
+        })
+        guard case .output(let text) = result else {
+            return XCTFail("Expected output")
+        }
+        XCTAssertEqual(text, String(localized: "Not found"))
     }
 
     func testHelpTopics() {

@@ -475,16 +475,18 @@ enum TerminalCommandParser {
         bytesProvider: (Range<Int>) -> [UInt8]
     ) -> TerminalCommandResult {
         let split = TerminalCommandTokenizer.split(commandTokens: tokens)
+        let asciiMode = split.flagTokens.contains { $0.lowercased() == "--ascii" }
+        let filteredFlags = split.flagTokens.filter { $0.lowercased() != "--ascii" }
 
         if let validationError = TerminalCommandTokenizer.validate(
-            flagTokens: split.flagTokens,
+            flagTokens: filteredFlags,
             allowCRCFlags: false,
             allowSamplingFlags: true
         ) {
             return .error(validationError.message)
         }
 
-        switch TerminalSamplingFlags.parse(flagTokens: split.flagTokens) {
+        switch TerminalSamplingFlags.parse(flagTokens: filteredFlags) {
         case .failure(let error):
             return .error(error.message)
         case .success(let flags):
@@ -492,8 +494,19 @@ enum TerminalCommandParser {
                 return .error(validationError.message)
             }
 
-            guard let patternResult = parseBytePattern(split.positionalTokens) else {
-                return .error(String(localized: "Usage: find <hex-pattern> [start end][, ...]"))
+            let patternResult: BytePatternParseResult
+            if asciiMode {
+                guard let asciiResult = BytePatternSearch.parseASCIITokens(split.positionalTokens) else {
+                    return .error(String(localized: "Usage: find --ascii <text> [start end][, ...]"))
+                }
+                patternResult = asciiResult
+            } else {
+                switch BytePatternSearch.parseHexTokens(split.positionalTokens) {
+                case .failure(let error):
+                    return .error(error.localizedDescription)
+                case .success(let result):
+                    patternResult = result
+                }
             }
 
             let segments: [Range<Int>]
@@ -505,12 +518,15 @@ enum TerminalCommandParser {
                 return .error(String(localized: "Invalid search range"))
             }
 
+            var allMatches: [Int] = []
             for segment in segments {
-                if let offset = findPattern(patternResult.pattern, in: segment, bytesProvider: bytesProvider) {
-                    return .output("0x\(HexFormatter.offsetString(for: offset)) (\(offset))")
-                }
+                allMatches.append(contentsOf: BytePatternSearch.findAll(
+                    pattern: patternResult.pattern,
+                    in: segment,
+                    bytesProvider: bytesProvider
+                ))
             }
-            return .output(String(localized: "Not found"))
+            return .output(BytePatternSearch.formatMatches(allMatches))
         }
     }
 
@@ -588,67 +604,6 @@ enum TerminalCommandParser {
 
     // MARK: - Helpers
 
-    private struct BytePatternParseResult {
-        let pattern: [UInt8]
-        let rangeTokens: [String]
-    }
-
-    private static func parseBytePattern(_ tokens: [String]) -> BytePatternParseResult? {
-        guard !tokens.isEmpty else { return nil }
-
-        var pattern: [UInt8] = []
-        var rangeStartIndex: Int?
-
-        for (index, token) in tokens.enumerated() {
-            if let byte = TerminalOffsetParser.parseByte(token) {
-                pattern.append(byte)
-                continue
-            }
-
-            let hexOnly = token.uppercased().filter(\.isHexDigit)
-            if !hexOnly.isEmpty, hexOnly.count.isMultiple(of: 2), hexOnly.count >= 2 {
-                var position = hexOnly.startIndex
-                while position < hexOnly.endIndex {
-                    let next = hexOnly.index(position, offsetBy: 2)
-                    if let value = UInt8(hexOnly[position..<next], radix: 16) {
-                        pattern.append(value)
-                    }
-                    position = next
-                }
-                continue
-            }
-
-            if pattern.isEmpty {
-                return nil
-            }
-            rangeStartIndex = index
-            break
-        }
-
-        guard !pattern.isEmpty else { return nil }
-        let rangeTokens = rangeStartIndex.map { Array(tokens[$0...]) } ?? []
-        return BytePatternParseResult(pattern: pattern, rangeTokens: rangeTokens)
-    }
-
-    private static func findPattern(
-        _ pattern: [UInt8],
-        in range: Range<Int>,
-        bytesProvider: (Range<Int>) -> [UInt8]
-    ) -> Int? {
-        guard !pattern.isEmpty, range.lowerBound < range.upperBound else { return nil }
-
-        let haystack = bytesProvider(range)
-        guard haystack.count >= pattern.count else { return nil }
-
-        let lastStart = haystack.count - pattern.count
-        for start in 0...lastStart {
-            if haystack[start..<(start + pattern.count)].elementsEqual(pattern) {
-                return range.lowerBound + start
-            }
-        }
-        return nil
-    }
-
     private static func unsignedValue(from bytes: [UInt8], littleEndian: Bool) -> UInt64 {
         var value: UInt64 = 0
         if littleEndian {
@@ -703,6 +658,7 @@ enum TerminalCommandParser {
                                     [--le] little-endian (default)
                                     [--be] big-endian
       find <pattern> [ranges]       search bytes; pattern: DEADBEEF or 0xDE 0xAD
+      find --ascii <text> [ranges]  search ASCII text; lists all matches
       cmp <r1>, <r2>                compare two equal-length ranges
       hash <md5|sha1|sha256> <ranges>
 

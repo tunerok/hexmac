@@ -98,6 +98,12 @@ struct HexMacApp: App {
             .keyboardShortcut("c", modifiers: .command)
             .disabled(!workspace.hasSelection)
 
+            Button(String(localized: "Find…")) {
+                workspace.openFindSheet()
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .disabled(!workspace.isDocumentOpen)
+
             Button(String(localized: "Show as Binary…")) {
                 workspace.openBinarySheet()
             }

@@ -60,6 +60,13 @@ struct WorkspaceView: View {
                 }
             }
         }
+        .sheet(isPresented: activePaneBinding(\.showFindSheet)) {
+            if let pane = workspace.activePane {
+                FindPanelView(pane: pane) {
+                    pane.closeFindSheet()
+                }
+            }
+        }
         .confirmationDialog(
             String(localized: "Fill selection with"),
             isPresented: activePaneBinding(\.showFillDialog),

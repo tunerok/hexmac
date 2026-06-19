@@ -479,6 +479,10 @@ final class WorkspaceViewModel {
         activePane?.openHashSheet()
     }
 
+    func openFindSheet() {
+        activePane?.openFindSheet()
+    }
+
     func presentError(_ message: String) {
         errorMessage = message
         showError = true

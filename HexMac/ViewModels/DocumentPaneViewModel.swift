@@ -23,6 +23,8 @@ final class DocumentPaneViewModel: Identifiable {
     var showFillDialog = false
     var showHistogramSheet = false
     var showBinarySheet = false
+    var showFindSheet = false
+    private(set) var findSession: FindSession?
     var binarySelectionStart = 0
     var binarySelectionEnd = 0
     var binarySelectionByteCount = 0
@@ -100,6 +102,7 @@ final class DocumentPaneViewModel: Identifiable {
             highlights = []
             scrollTargetOffset = nil
             terminalHistory = []
+            findSession = nil
             editingOffset = nil
             editingHexText = ""
             editingAppendedByte = false
@@ -121,6 +124,8 @@ final class DocumentPaneViewModel: Identifiable {
         showFillDialog = false
         showHistogramSheet = false
         showBinarySheet = false
+        showFindSheet = false
+        findSession = nil
         binarySelectionStart = 0
         binarySelectionEnd = 0
         binarySelectionByteCount = 0
@@ -329,6 +334,126 @@ final class DocumentPaneViewModel: Identifiable {
             localized: "Selection: 0x\(HexFormatter.offsetString(for: selection.start)) – 0x\(HexFormatter.offsetString(for: selection.end))"
         )
         showHistogramSheet = true
+    }
+
+    func openFindSheet() {
+        showFindSheet = true
+    }
+
+    func closeFindSheet() {
+        showFindSheet = false
+        findSession = nil
+    }
+
+    func performFind(
+        input: String,
+        mode: FindPatternMode,
+        entireFile: Bool,
+        direction: FindDirection
+    ) -> FindResult {
+        switch BytePatternSearch.pattern(from: input, mode: mode) {
+        case .failure:
+            return .notFound
+        case .success(let pattern):
+            let cursor = selectedOffset ?? 0
+            let matches = BytePatternSearch.search(
+                pattern: pattern,
+                fileSize: fileSize,
+                bytesProvider: { [weak self] range in
+                    self?.bytes(in: range) ?? []
+                },
+                entireFile: entireFile,
+                direction: direction,
+                cursor: cursor
+            )
+
+            guard let first = matches.first else {
+                findSession = FindSession(
+                    pattern: pattern,
+                    mode: mode,
+                    entireFile: entireFile,
+                    direction: direction,
+                    matches: [],
+                    currentIndex: -1
+                )
+                return .notFound
+            }
+
+            var session = FindSession(
+                pattern: pattern,
+                mode: mode,
+                entireFile: entireFile,
+                direction: direction,
+                matches: matches,
+                currentIndex: 0
+            )
+            findSession = session
+            navigateToFindOffset(first)
+            return .found(session)
+        }
+    }
+
+    @discardableResult
+    func findNext() -> FindResult {
+        guard var session = findSession else { return .notFound }
+
+        let afterOffset = session.currentMatch ?? selectedOffset ?? 0
+        guard let nextOffset = BytePatternSearch.findNext(
+            pattern: session.pattern,
+            fileSize: fileSize,
+            bytesProvider: { [weak self] range in
+                self?.bytes(in: range) ?? []
+            },
+            entireFile: session.entireFile,
+            direction: session.direction,
+            afterOffset: afterOffset
+        ) else {
+            return .notFound
+        }
+
+        if let existingIndex = session.matches.firstIndex(of: nextOffset) {
+            session.currentIndex = existingIndex
+        } else {
+            session.matches.append(nextOffset)
+            session.currentIndex = session.matches.count - 1
+        }
+
+        findSession = session
+        navigateToFindOffset(nextOffset)
+        return .found(session)
+    }
+
+    @discardableResult
+    func findPreviousMatch() -> FindResult {
+        guard var session = findSession, session.hasMatches else { return .notFound }
+        guard session.currentIndex > 0 else { return .notFound }
+
+        session.currentIndex -= 1
+        findSession = session
+        if let offset = session.currentMatch {
+            navigateToFindOffset(offset)
+            return .found(session)
+        }
+        return .notFound
+    }
+
+    @discardableResult
+    func findNextMatch() -> FindResult {
+        guard var session = findSession, session.hasMatches else { return .notFound }
+        guard session.currentIndex + 1 < session.matches.count else { return .notFound }
+
+        session.currentIndex += 1
+        findSession = session
+        if let offset = session.currentMatch {
+            navigateToFindOffset(offset)
+            return .found(session)
+        }
+        return .notFound
+    }
+
+    private func navigateToFindOffset(_ offset: Int) {
+        selection = .single(at: offset)
+        scrollTargetOffset = offset
     }
 
     func executeTerminalCommand(_ input: String) {
