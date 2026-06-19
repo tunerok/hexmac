@@ -181,8 +181,8 @@ final class DocumentPaneViewModel: Identifiable {
             let right = try HexDocument.open(url: rightURL, readOnly: true)
             paneMode = .comparison(left: left, right: right)
             selection = nil
-            comparisonLeftSelection = fileSize > 0 ? .single(at: 0) : nil
-            comparisonRightSelection = fileSize > 0 ? .single(at: 0) : nil
+            comparisonLeftSelection = nil
+            comparisonRightSelection = nil
             comparisonActiveSide = .left
             highlights = []
             scrollTargetOffset = nil
@@ -952,6 +952,8 @@ final class DocumentPaneViewModel: Identifiable {
     }
 
     func executeTerminalCommand(_ input: String) {
+        guard !isComparisonPane else { return }
+
         terminalHistory.append(TerminalLine(kind: .input, text: input))
 
         let result = TerminalCommandParser.execute(

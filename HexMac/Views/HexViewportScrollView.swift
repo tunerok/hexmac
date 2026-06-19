@@ -11,6 +11,7 @@ struct HexViewportScrollView<RowContent: View, Overlay: View>: View {
     let rowCount: Int
     let bytesPerRow: Int
     let visibleRowCount: Int
+    let contentWidth: CGFloat
     let scrollTargetRow: Int?
     let scrollRevealOffset: Int?
     let scrollAnchor: HexScrollAnchor
@@ -46,21 +47,22 @@ struct HexViewportScrollView<RowContent: View, Overlay: View>: View {
         let topPadding = HexGridLayout.contentPadding
 
         ZStack(alignment: .topLeading) {
-            ForEach(Array(renderedRange), id: \.self) { rowIndex in
-                rowContent(rowIndex)
-                    .frame(maxWidth: .infinity, minHeight: rowHeight, maxHeight: rowHeight, alignment: .leading)
-                    .offset(y: topPadding + CGFloat(rowIndex - firstVisibleRow) * rowHeight)
-            }
+            rowStack(
+                renderedRange: renderedRange,
+                rowHeight: rowHeight,
+                topPadding: topPadding
+            )
 
             overlay(firstVisibleRow)
                 .padding(.top, topPadding)
+                .frame(maxWidth: contentWidth, alignment: .leading)
 
             ViewportScrollWheelInstaller { deltaY, phase in
                 handleScrollWheel(deltaY: deltaY, phase: phase)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: contentWidth, maxHeight: .infinity, alignment: .topLeading)
         .clipped()
         .onAppear {
             reportVisibleState(window: scrollWindow)
@@ -113,6 +115,19 @@ struct HexViewportScrollView<RowContent: View, Overlay: View>: View {
             DispatchQueue.main.async {
                 isApplyingLinkedScroll = false
             }
+        }
+    }
+
+    @ViewBuilder
+    private func rowStack(
+        renderedRange: Range<Int>,
+        rowHeight: CGFloat,
+        topPadding: CGFloat
+    ) -> some View {
+        ForEach(Array(renderedRange), id: \.self) { rowIndex in
+            rowContent(rowIndex)
+                .frame(minWidth: contentWidth, maxWidth: contentWidth, minHeight: rowHeight, maxHeight: rowHeight, alignment: .leading)
+                .offset(y: topPadding + CGFloat(rowIndex - firstVisibleRow) * rowHeight)
         }
     }
 

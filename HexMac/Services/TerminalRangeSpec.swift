@@ -34,10 +34,10 @@ struct TerminalRangeSpec: Equatable {
 
             let startText = offsets[0]
             let endText = offsets[1]
-            guard let start = TerminalOffsetParser.parse(startText) else {
+            guard let start = TerminalOffsetParser.parse(startText, fileSize: fileSize) else {
                 return .failure(TerminalParseError(message: String(localized: "Invalid offset: \(startText)")))
             }
-            guard let end = TerminalOffsetParser.parse(endText) else {
+            guard let end = TerminalOffsetParser.parse(endText, fileSize: fileSize) else {
                 return .failure(TerminalParseError(message: String(localized: "Invalid offset: \(endText)")))
             }
 

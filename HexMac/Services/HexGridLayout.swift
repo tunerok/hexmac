@@ -36,6 +36,17 @@ enum HexGridLayout {
         CGFloat(bytesPerRow) * textCharacterWidth
     }
 
+    static func hexTextContentWidth(for bytesPerRow: Int) -> CGFloat {
+        hexColumnLeadingPadding
+            + hexColumnWidth(for: bytesPerRow)
+            + dividerSectionWidth
+            + textColumnWidth(for: bytesPerRow)
+    }
+
+    static func rowContentWidth(for bytesPerRow: Int) -> CGFloat {
+        offsetColumnWidth + hexTextContentWidth(for: bytesPerRow)
+    }
+
     static func hexCellOriginX(for column: Int) -> CGFloat {
         CGFloat(column) * (cellWidth + cellSpacing)
     }
@@ -46,12 +57,22 @@ enum HexGridLayout {
         return CGFloat(columnCount) * cellWidth + CGFloat(columnCount - 1) * cellSpacing
     }
 
-    static func hexColumnStartX(contentPadding: CGFloat = contentPadding) -> CGFloat {
-        contentPadding + offsetColumnWidth + hexColumnLeadingPadding
+    static func hexColumnStartX(
+        contentPadding: CGFloat = contentPadding,
+        includesOffsetColumn: Bool = true
+    ) -> CGFloat {
+        if includesOffsetColumn {
+            return contentPadding + offsetColumnWidth + hexColumnLeadingPadding
+        }
+        return hexColumnLeadingPadding
     }
 
-    static func textColumnStartX(bytesPerRow: Int, contentPadding: CGFloat = contentPadding) -> CGFloat {
-        hexColumnStartX(contentPadding: contentPadding)
+    static func textColumnStartX(
+        bytesPerRow: Int,
+        contentPadding: CGFloat = contentPadding,
+        includesOffsetColumn: Bool = true
+    ) -> CGFloat {
+        hexColumnStartX(contentPadding: contentPadding, includesOffsetColumn: includesOffsetColumn)
             + hexColumnWidth(for: bytesPerRow)
             + dividerSectionWidth
     }
@@ -61,7 +82,8 @@ enum HexGridLayout {
         rowCount: Int,
         fileSize: Int,
         bytesPerRow: Int,
-        firstVisibleRow: Int = 0
+        firstVisibleRow: Int = 0,
+        includesOffsetColumn: Bool = false
     ) -> Int? {
         guard rowCount > 0, bytesPerRow > 0, fileSize > 0 else { return nil }
 
@@ -72,7 +94,11 @@ enum HexGridLayout {
         let rowIndex = firstVisibleRow + localRowIndex
         guard rowIndex >= 0, rowIndex < rowCount else { return nil }
 
-        let column = columnIndex(at: point.x, bytesPerRow: bytesPerRow)
+        let column = columnIndex(
+            at: point.x,
+            bytesPerRow: bytesPerRow,
+            includesOffsetColumn: includesOffsetColumn
+        )
         guard let column else { return nil }
 
         let offset = rowIndex * bytesPerRow + column
@@ -80,10 +106,14 @@ enum HexGridLayout {
         return offset
     }
 
-    private static func columnIndex(at x: CGFloat, bytesPerRow: Int) -> Int? {
-        let hexStart = hexColumnStartX()
+    private static func columnIndex(
+        at x: CGFloat,
+        bytesPerRow: Int,
+        includesOffsetColumn: Bool
+    ) -> Int? {
+        let hexStart = hexColumnStartX(includesOffsetColumn: includesOffsetColumn)
         let hexEnd = hexStart + hexColumnWidth(for: bytesPerRow)
-        let textStart = textColumnStartX(bytesPerRow: bytesPerRow)
+        let textStart = textColumnStartX(bytesPerRow: bytesPerRow, includesOffsetColumn: includesOffsetColumn)
         let textEnd = textStart + textColumnWidth(for: bytesPerRow)
 
         if x >= hexStart, x < hexEnd {

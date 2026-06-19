@@ -165,4 +165,22 @@ final class BytePatternSearchTests: XCTestCase {
             XCTFail("Expected success")
         }
     }
+
+    func testParseASCIITokensPatternOnly() {
+        let result = BytePatternSearch.parseASCIITokens(["dyld"], fileSize: 100)
+        XCTAssertEqual(result?.pattern, Array("dyld".utf8))
+        XCTAssertTrue(result?.rangeTokens.isEmpty ?? false)
+    }
+
+    func testParseASCIITokensWithRange() {
+        let result = BytePatternSearch.parseASCIITokens(["dyld", "0", "end"], fileSize: 100)
+        XCTAssertEqual(result?.pattern, Array("dyld".utf8))
+        XCTAssertEqual(result?.rangeTokens, ["0", "end"])
+    }
+
+    func testParseASCIITokensFallsBackToFullPatternWhenRangeInvalid() {
+        let result = BytePatternSearch.parseASCIITokens(["hello", "world"], fileSize: 100)
+        XCTAssertEqual(result?.pattern, Array("hello world".utf8))
+        XCTAssertTrue(result?.rangeTokens.isEmpty ?? false)
+    }
 }

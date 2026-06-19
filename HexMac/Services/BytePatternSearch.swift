@@ -99,8 +99,23 @@ enum BytePatternSearch {
         return .success(BytePatternParseResult(pattern: pattern, rangeTokens: rangeTokens))
     }
 
-    static func parseASCIITokens(_ tokens: [String]) -> BytePatternParseResult? {
+    static func parseASCIITokens(_ tokens: [String], fileSize: Int) -> BytePatternParseResult? {
         guard !tokens.isEmpty else { return nil }
+
+        if fileSize > 0 {
+            for splitIndex in stride(from: tokens.count - 1, through: 1, by: -1) {
+                let patternTokens = Array(tokens[..<splitIndex])
+                let rangeTokens = Array(tokens[splitIndex...])
+                guard !patternTokens.isEmpty else { continue }
+
+                if case .success = TerminalRangeSpec.parse(positionalTokens: rangeTokens, fileSize: fileSize) {
+                    let pattern = Array(patternTokens.joined(separator: " ").utf8)
+                    guard !pattern.isEmpty else { return nil }
+                    return BytePatternParseResult(pattern: pattern, rangeTokens: rangeTokens)
+                }
+            }
+        }
+
         let pattern = Array(tokens.joined(separator: " ").utf8)
         guard !pattern.isEmpty else { return nil }
         return BytePatternParseResult(pattern: pattern, rangeTokens: [])

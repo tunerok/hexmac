@@ -40,6 +40,11 @@ final class TerminalRangeSpecTests: XCTestCase {
         XCTAssertTrue(error.message.contains("300"))
         XCTAssertTrue(error.message.contains("200"))
     }
+
+    func testEndKeywordRange() {
+        let spec = try? TerminalRangeSpec.parse(positionalTokens: ["0", "end"], fileSize: 256).get()
+        XCTAssertEqual(spec?.segments, [0..<256])
+    }
 }
 
 final class TerminalByteSamplerTests: XCTestCase {
@@ -159,6 +164,22 @@ final class TerminalCommandParserTests: XCTestCase {
         }
         XCTAssertTrue(text.contains("0x"))
         XCTAssertTrue(text.contains("3 matches"))
+    }
+
+    func testFindASCIIWithRange() {
+        let bytes: [UInt8] = Array("xxdyldxx".utf8)
+        let result = TerminalCommandParser.execute(
+            "find --ascii dyld 0 end",
+            fileSize: bytes.count,
+            bytesProvider: { range in
+                Array(bytes[range])
+            }
+        )
+        guard case .output(let text) = result else {
+            return XCTFail("Expected output")
+        }
+        XCTAssertTrue(text.contains("0x00000002"))
+        XCTAssertTrue(text.contains("1 matches"))
     }
 
     func testFindNotFound() {

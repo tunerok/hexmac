@@ -18,7 +18,7 @@ struct ContentView: View {
                 EmptyStateView(onOpen: workspace.openFilePanel)
             }
         }
-        .frame(minWidth: 720, minHeight: 480)
+        .frame(minWidth: 792, minHeight: 480)
         .navigationTitle(workspace.windowTitle)
         .toolbarRole(.editor)
         .onAppear {

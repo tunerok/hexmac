@@ -99,11 +99,11 @@ struct HexMacApp: App {
             .disabled(!workspace.isDocumentOpen)
         }
 
-        CommandGroup(replacing: .pasteboard) {
-            Button(String(localized: "Copy")) {
+        CommandGroup(after: .pasteboard) {
+            Button(String(localized: "Copy as Hex")) {
                 workspace.copySelectionHex()
             }
-            .keyboardShortcut("c", modifiers: .command)
+            .keyboardShortcut("c", modifiers: [.command, .shift])
             .disabled(!workspace.hasSelection)
 
             Button(String(localized: "Find…")) {

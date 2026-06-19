@@ -22,7 +22,9 @@ struct CompareHexGridView: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
+        let rowDataRevision = pane.comparisonRowRevision
+
+        return GeometryReader { geometry in
             let gridHeight = verticalScrollHeight(in: geometry)
             let visibleRowCount = max(
                 1,
@@ -30,6 +32,20 @@ struct CompareHexGridView: View {
             )
 
             HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HexOffsetHeaderView()
+                    Divider()
+                    HexOffsetColumnView(
+                        firstVisibleRow: firstVisibleRow,
+                        rowCount: pane.rowCount,
+                        bytesPerRow: pane.bytesPerRow.rawValue,
+                        visibleRowCount: visibleRowCount,
+                        height: gridHeight
+                    )
+                }
+                .padding(.leading, HexGridLayout.contentPadding)
+                .frame(width: HexGridLayout.offsetColumnWidth + HexGridLayout.contentPadding, alignment: .leading)
+
                 ScrollView(.horizontal) {
                     VStack(alignment: .leading, spacing: 0) {
                         pairedHeaders
@@ -39,6 +55,7 @@ struct CompareHexGridView: View {
                             rowCount: pane.rowCount,
                             bytesPerRow: pane.bytesPerRow.rawValue,
                             visibleRowCount: visibleRowCount,
+                            contentWidth: Self.pairedDataWidth(bytesPerRow: pane.bytesPerRow.rawValue),
                             scrollTargetRow: scrollTargetRow,
                             scrollRevealOffset: pane.scrollRevealOffset,
                             scrollAnchor: .top,
@@ -66,7 +83,7 @@ struct CompareHexGridView: View {
                                 pane.clearScrollReveal()
                             },
                             rowContent: { rowIndex in
-                                pairedRow(rowIndex: rowIndex)
+                                pairedRow(rowIndex: rowIndex, rowDataRevision: rowDataRevision)
                             },
                             overlay: { firstVisibleRow in
                                 selectionOverlay(firstVisibleRow: firstVisibleRow)
@@ -74,7 +91,7 @@ struct CompareHexGridView: View {
                         )
                         .frame(height: gridHeight)
                     }
-                    .padding(.leading, HexGridLayout.contentPadding)
+                    .frame(minWidth: Self.pairedDataWidth(bytesPerRow: pane.bytesPerRow.rawValue))
                     .padding(.trailing, HexGridLayout.contentPadding)
                 }
 
@@ -106,13 +123,13 @@ struct CompareHexGridView: View {
 
     private var pairedHeaders: some View {
         HStack(spacing: 0) {
-            HexGridHeaderView(bytesPerRow: pane.bytesPerRow.rawValue)
+            HexGridHeaderView(bytesPerRow: pane.bytesPerRow.rawValue, showsOffsetColumn: false)
             panelSeparator
-            HexGridHeaderView(bytesPerRow: pane.bytesPerRow.rawValue)
+            HexGridHeaderView(bytesPerRow: pane.bytesPerRow.rawValue, showsOffsetColumn: false)
         }
     }
 
-    private func pairedRow(rowIndex: Int) -> some View {
+    private func pairedRow(rowIndex: Int, rowDataRevision: Int) -> some View {
         let context = pane.comparisonRowContext(for: rowIndex)
 
         return HStack(spacing: 0) {
@@ -125,8 +142,9 @@ struct CompareHexGridView: View {
                 editingOffset: nil,
                 editingHexText: "",
                 textEncoding: pane.textEncoding,
-                highlightColor: { _ in nil },
-                diffHexSpans: context.leftDiffSpans
+                highlightColor: { pane.diffHighlight(at: $0, side: .left) },
+                diffHexSpans: context.leftDiffSpans,
+                showsOffsetColumn: false
             )
             .equatable()
 
@@ -141,12 +159,14 @@ struct CompareHexGridView: View {
                 editingOffset: nil,
                 editingHexText: "",
                 textEncoding: pane.textEncoding,
-                highlightColor: { _ in nil },
-                diffHexSpans: context.rightDiffSpans
+                highlightColor: { pane.diffHighlight(at: $0, side: .right) },
+                diffHexSpans: context.rightDiffSpans,
+                showsOffsetColumn: false
             )
             .equatable()
         }
-        .id("\(rowIndex)-\(pane.compareRowRevision(for: rowIndex))")
+        .frame(width: Self.pairedDataWidth(bytesPerRow: pane.bytesPerRow.rawValue), alignment: .leading)
+        .id("\(rowIndex)-\(rowDataRevision)-\(pane.compareRowRevision(for: rowIndex))")
     }
 
     private func scheduleMinimapRangeUpdate(_ range: ClosedRange<Int>) {
@@ -257,10 +277,10 @@ struct CompareHexGridView: View {
     }
 
     static func sideContentWidth(bytesPerRow: Int) -> CGFloat {
-        HexGridLayout.offsetColumnWidth
-            + HexGridLayout.hexColumnLeadingPadding
-            + HexFormatter.hexColumnWidth(for: bytesPerRow)
-            + HexGridLayout.dividerSectionWidth
-            + HexFormatter.textColumnWidth(for: bytesPerRow)
+        HexGridLayout.hexTextContentWidth(for: bytesPerRow)
+    }
+
+    static func pairedDataWidth(bytesPerRow: Int) -> CGFloat {
+        sideContentWidth(bytesPerRow: bytesPerRow) * 2 + 1
     }
 }

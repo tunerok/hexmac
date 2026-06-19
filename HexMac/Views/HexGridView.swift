@@ -140,13 +140,27 @@ struct HexGridView: View {
             )
 
             HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HexOffsetHeaderView()
+                    Divider()
+                    HexOffsetColumnView(
+                        firstVisibleRow: firstVisibleRow,
+                        rowCount: rowCount,
+                        bytesPerRow: bytesPerRow,
+                        visibleRowCount: visibleRowCount,
+                        height: gridHeight
+                    )
+                }
+                .padding(.leading, HexGridLayout.contentPadding)
+                .frame(width: HexGridLayout.offsetColumnWidth + HexGridLayout.contentPadding, alignment: .leading)
+
                 ScrollView(.horizontal) {
                     VStack(alignment: .leading, spacing: 0) {
-                        HexGridHeaderView(bytesPerRow: bytesPerRow)
+                        HexGridHeaderView(bytesPerRow: bytesPerRow, showsOffsetColumn: false)
                         Divider()
                         viewportGrid(visibleRowCount: visibleRowCount, height: gridHeight)
                     }
-                    .padding(.leading, HexGridLayout.contentPadding)
+                    .frame(minWidth: HexGridLayout.hexTextContentWidth(for: bytesPerRow))
                     .padding(.trailing, HexGridLayout.contentPadding)
                 }
 
@@ -168,11 +182,14 @@ struct HexGridView: View {
     }
 
     private func viewportGrid(visibleRowCount: Int, height: CGFloat) -> some View {
-        HexViewportScrollView(
+        let dataWidth = HexGridLayout.hexTextContentWidth(for: bytesPerRow)
+
+        return HexViewportScrollView(
             firstVisibleRow: $firstVisibleRow,
             rowCount: rowCount,
             bytesPerRow: bytesPerRow,
             visibleRowCount: visibleRowCount,
+            contentWidth: dataWidth,
             scrollTargetRow: scrollTargetRow,
             scrollRevealOffset: scrollRevealOffset,
             scrollAnchor: .top,
@@ -199,7 +216,8 @@ struct HexGridView: View {
                         bytesPerRow: bytesPerRow,
                         fileSize: fileSize,
                         highlights: highlights
-                    )
+                    ),
+                    showsOffsetColumn: false
                 )
                 .equatable()
                 .id(rowIdentity(for: rowIndex))

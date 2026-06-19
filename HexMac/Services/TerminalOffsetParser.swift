@@ -6,8 +6,12 @@
 import Foundation
 
 enum TerminalOffsetParser {
-    static func parse(_ text: String) -> Int? {
+    static func parse(_ text: String, fileSize: Int? = nil) -> Int? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.lowercased() == "end" {
+            guard let fileSize, fileSize > 0 else { return nil }
+            return fileSize - 1
+        }
         if trimmed.lowercased().hasPrefix("0x") {
             let hex = String(trimmed.dropFirst(2))
             return Int(hex, radix: 16)

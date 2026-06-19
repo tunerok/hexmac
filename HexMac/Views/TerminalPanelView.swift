@@ -22,18 +22,29 @@ private struct TerminalPanelBoundView: View {
     @Bindable var pane: DocumentPaneViewModel
     @State private var commandInput = ""
 
+    private var isTerminalEnabled: Bool {
+        !pane.isComparisonPane
+    }
+
     var body: some View {
         TerminalPanelContent(
             history: pane.terminalHistory,
             commandInput: $commandInput,
-            isEnabled: !pane.isComparisonPane,
+            isEnabled: isTerminalEnabled,
             onSubmit: {
+                guard isTerminalEnabled else { return }
                 let command = commandInput
                 commandInput = ""
                 guard !command.isEmpty else { return }
                 pane.executeTerminalCommand(command)
             }
         )
+        .id("\(pane.id)-\(pane.isComparisonPane)")
+        .onChange(of: pane.isComparisonPane) { _, isComparison in
+            if isComparison {
+                commandInput = ""
+            }
+        }
     }
 }
 
@@ -162,6 +173,7 @@ private struct TerminalPanelContent: View {
     }
 
     private func submitCommand() {
+        guard isEnabled else { return }
         historyNavigator.reset()
         onSubmit()
     }
@@ -216,6 +228,8 @@ private struct TerminalCommandTextField: NSViewRepresentable {
         field.delegate = context.coordinator
         field.target = context.coordinator
         field.action = #selector(Coordinator.submit(_:))
+        field.isEnabled = isEnabled
+        field.isEditable = isEnabled
         return field
     }
 
@@ -227,6 +241,11 @@ private struct TerminalCommandTextField: NSViewRepresentable {
         }
         field.placeholderString = placeholder
         field.isEnabled = isEnabled
+        field.isEditable = isEnabled
+
+        if !isEnabled, field.window?.firstResponder === field.currentEditor() || field.window?.firstResponder === field {
+            field.window?.makeFirstResponder(nil)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -241,15 +260,22 @@ private struct TerminalCommandTextField: NSViewRepresentable {
         }
 
         @objc func submit(_ sender: NSTextField) {
+            guard parent.isEnabled else { return }
             parent.onSubmit()
         }
 
         func controlTextDidChange(_ notification: Notification) {
             guard let field = notification.object as? NSTextField else { return }
+            guard parent.isEnabled else {
+                field.stringValue = parent.text
+                return
+            }
             parent.text = field.stringValue
         }
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            guard parent.isEnabled else { return false }
+
             switch commandSelector {
             case #selector(NSResponder.moveUp(_:)):
                 parent.onHistoryUp()

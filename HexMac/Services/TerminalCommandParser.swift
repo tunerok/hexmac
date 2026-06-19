@@ -174,14 +174,11 @@ enum TerminalCommandParser {
             return .error(String(localized: "Usage: goto <offset|end>"))
         }
 
-        if tokens[1].lowercased() == "end" {
-            guard fileSize > 0 else {
-                return .error(String(localized: "File is empty"))
-            }
-            return .navigate(fileSize - 1)
+        if tokens[1].lowercased() == "end", fileSize == 0 {
+            return .error(String(localized: "File is empty"))
         }
 
-        guard let offset = TerminalOffsetParser.parse(tokens[1]) else {
+        guard let offset = TerminalOffsetParser.parse(tokens[1], fileSize: fileSize) else {
             return .error(String(localized: "Usage: goto <offset|end>"))
         }
         if let boundsError = TerminalOffsetParser.validateInFile(offset: offset, text: tokens[1], fileSize: fileSize) {
@@ -518,7 +515,7 @@ enum TerminalCommandParser {
 
             let patternResult: BytePatternParseResult
             if asciiMode {
-                guard let asciiResult = BytePatternSearch.parseASCIITokens(split.positionalTokens) else {
+                guard let asciiResult = BytePatternSearch.parseASCIITokens(split.positionalTokens, fileSize: fileSize) else {
                     return .error(String(localized: "Usage: find --ascii <text> [start end][, ...]"))
                 }
                 patternResult = asciiResult

@@ -17,6 +17,7 @@ struct HexRowView: View, Equatable {
     let highlightColor: (Int) -> HighlightColor?
     let userHexSpans: [HexDiffSpan]?
     let diffHexSpans: [HexDiffSpan]?
+    let showsOffsetColumn: Bool
 
     init(
         rowIndex: Int,
@@ -29,7 +30,8 @@ struct HexRowView: View, Equatable {
         textEncoding: TextEncodingMode,
         highlightColor: @escaping (Int) -> HighlightColor?,
         userHexSpans: [HexDiffSpan]? = nil,
-        diffHexSpans: [HexDiffSpan]? = nil
+        diffHexSpans: [HexDiffSpan]? = nil,
+        showsOffsetColumn: Bool = true
     ) {
         self.rowIndex = rowIndex
         self.bytes = bytes
@@ -42,6 +44,7 @@ struct HexRowView: View, Equatable {
         self.highlightColor = highlightColor
         self.userHexSpans = userHexSpans
         self.diffHexSpans = diffHexSpans
+        self.showsOffsetColumn = showsOffsetColumn
     }
 
     static func == (lhs: HexRowView, rhs: HexRowView) -> Bool {
@@ -55,6 +58,7 @@ struct HexRowView: View, Equatable {
             && lhs.textEncoding == rhs.textEncoding
             && lhs.userHexSpans == rhs.userHexSpans
             && lhs.diffHexSpans == rhs.diffHexSpans
+            && lhs.showsOffsetColumn == rhs.showsOffsetColumn
     }
 
     private var rowOffset: Int {
@@ -92,10 +96,12 @@ struct HexRowView: View, Equatable {
 
     var body: some View {
         HStack(spacing: 0) {
-            Text(HexFormatter.offsetString(for: rowOffset))
-                .font(.body.monospaced())
-                .foregroundStyle(.secondary)
-                .frame(width: HexGridLayout.offsetColumnWidth, alignment: .leading)
+            if showsOffsetColumn {
+                Text(HexFormatter.offsetString(for: rowOffset))
+                    .font(.body.monospaced())
+                    .foregroundStyle(.secondary)
+                    .frame(width: HexGridLayout.offsetColumnWidth, alignment: .leading)
+            }
 
             if usesDetailedCells {
                 detailedHexColumn
@@ -112,7 +118,11 @@ struct HexRowView: View, Equatable {
                 compactTextColumn
             }
         }
-        .frame(height: HexGridLayout.rowHeight, alignment: .leading)
+        .frame(
+            width: showsOffsetColumn ? nil : HexGridLayout.hexTextContentWidth(for: bytesPerRow),
+            height: HexGridLayout.rowHeight,
+            alignment: .leading
+        )
     }
 
     private var compactHexColumnWithHighlightOverlay: some View {
