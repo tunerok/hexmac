@@ -13,6 +13,10 @@ struct HistogramView: View {
     let title: String
     let byteCount: Int
     let counts: [Int]
+    var isLoading: Bool = false
+    var progress: Double = 0
+    var uniqueValueCount: Int = 0
+    var topEntries: [(byte: Int, count: Int)] = []
     let onClose: () -> Void
 
     private enum ExportFormat {
@@ -42,14 +46,24 @@ struct HistogramView: View {
         counts.enumerated().map { HistogramByteCount(byte: $0.offset, count: $0.element) }
     }
 
-    private var topEntries: [(byte: Int, count: Int)] {
-        Array(HistogramBuilder.nonZeroEntries(in: counts).prefix(16))
+    private var summaryText: String {
+        if isLoading {
+            let scannedBytes = min(byteCount, Int((progress * Double(byteCount)).rounded(.down)))
+            return String(
+                localized: "\(scannedBytes) / \(byteCount) bytes",
+                comment: "Histogram summary while scanning"
+            )
+        }
+        return String(
+            localized: "\(byteCount) bytes, \(uniqueValueCount) unique values",
+            comment: "Histogram summary"
+        )
     }
 
-    private var summaryText: String {
+    private var progressText: String {
         String(
-            localized: "\(byteCount) bytes, \(HistogramBuilder.nonZeroEntries(in: counts).count) unique values",
-            comment: "Histogram summary"
+            localized: "Scanning… \(String(format: "%.1f", progress * 100))%",
+            comment: "Histogram scan progress"
         )
     }
 
@@ -67,10 +81,12 @@ struct HistogramView: View {
                 Button(String(localized: "Save as PNG…")) {
                     saveHistogram(as: .png)
                 }
+                .disabled(isLoading)
 
                 Button(String(localized: "Save as JPEG…")) {
                     saveHistogram(as: .jpeg)
                 }
+                .disabled(isLoading)
 
                 Spacer()
 
@@ -98,8 +114,18 @@ struct HistogramView: View {
             Text(summaryText)
                 .foregroundStyle(.secondary)
 
+            if isLoading {
+                VStack(spacing: 8) {
+                    ProgressView(value: max(progress, 0.001))
+                    Text(progressText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             histogramChart
                 .frame(height: 280)
+                .opacity(isLoading ? 0.85 : 1)
 
             if !topEntries.isEmpty {
                 topEntriesList
@@ -118,6 +144,7 @@ struct HistogramView: View {
         .chartXAxisLabel(String(localized: "Byte value (hex)"))
         .chartYAxisLabel(String(localized: "Count"))
         .chartXScale(domain: 0...255)
+        .id(chartData.reduce(0) { $0 + $1.count })
     }
 
     private var topEntriesList: some View {
@@ -284,6 +311,8 @@ private struct HistogramExportView: View {
         title: "Entire file",
         byteCount: 256,
         counts: (0..<256).map { $0 == 0x00 ? 100 : $0 == 0xFF ? 50 : 1 },
+        uniqueValueCount: 256,
+        topEntries: [(byte: 0, count: 100), (byte: 255, count: 50)],
         onClose: {}
     )
 }

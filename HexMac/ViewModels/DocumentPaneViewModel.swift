@@ -41,6 +41,8 @@ final class DocumentPaneViewModel: Identifiable {
     var histogramTitle = ""
     var histogramFileName = ""
     var histogramByteCount = 0
+    var histogramUniqueValueCount = 0
+    var histogramTopEntries: [(byte: Int, count: Int)] = []
     var terminalHistory: [TerminalLine] = []
     var editingOffset: Int?
     var editingHexText = ""
@@ -48,9 +50,24 @@ final class DocumentPaneViewModel: Identifiable {
     var errorMessage: String?
     var showError = false
     private(set) var dataRevision = 0
-    private(set) var comparisonDiffIndex: CompareDiffIndex?
+    private(set) var comparisonDiffMap: CompareDiffMap?
     private(set) var isDiffMapLoading = false
+    private(set) var diffMapProgress: Double = 0
+    private(set) var comparisonRowRevision = 0
     @ObservationIgnored private var comparisonDiffMapGeneration = 0
+    private(set) var isHistogramLoading = false
+    private(set) var histogramProgress: Double = 0
+    @ObservationIgnored private var histogramGeneration = 0
+    @ObservationIgnored private var compareRowCache = CompareRowCache()
+    @ObservationIgnored private var compareRowCacheGeneration = 0
+    @ObservationIgnored private var documentRowCache = DocumentRowCache()
+    @ObservationIgnored private var documentRowCacheGeneration = 0
+    @ObservationIgnored private var documentRowLoadTask: Task<Void, Never>?
+    @ObservationIgnored private var documentRowLoadGeneration = 0
+    private(set) var documentRowRevision = 0
+    private(set) var scrollSessionID = 0
+    @ObservationIgnored private var comparisonRowLoadTask: Task<Void, Never>?
+    @ObservationIgnored private var comparisonRowLoadGeneration = 0
 
     private let undoManager = UndoManager()
 
@@ -146,6 +163,7 @@ final class DocumentPaneViewModel: Identifiable {
             editingHexText = ""
             editingAppendedByte = false
             undoManager.removeAllActions()
+            scrollSessionID &+= 1
             bumpDataRevision()
         } catch {
             presentError(error.localizedDescription)
@@ -172,24 +190,27 @@ final class DocumentPaneViewModel: Identifiable {
             editingHexText = ""
             editingAppendedByte = false
             undoManager.removeAllActions()
+            scrollSessionID &+= 1
             bumpDataRevision()
-            rebuildComparisonDiffIndex()
+            rebuildComparisonDiffMap()
         } catch {
             presentError(error.localizedDescription)
         }
     }
 
-    func rebuildComparisonDiffIndex(bucketCount: Int = ByteCompareService.defaultBucketCount) {
+    func rebuildComparisonDiffMap(bucketCount: Int = ByteCompareService.defaultBucketCount) {
         guard case .comparison(let left, let right) = paneMode else {
-            comparisonDiffIndex = nil
+            comparisonDiffMap = nil
             isDiffMapLoading = false
+            diffMapProgress = 0
             return
         }
 
         comparisonDiffMapGeneration &+= 1
         let generation = comparisonDiffMapGeneration
         isDiffMapLoading = true
-        comparisonDiffIndex = nil
+        diffMapProgress = 0
+        comparisonDiffMap = nil
 
         let leftArray = left.byteArray
         let rightArray = right.byteArray
@@ -197,19 +218,38 @@ final class DocumentPaneViewModel: Identifiable {
         let rightSize = right.fileSize
 
         Task.detached {
-            let index = ByteCompareService.buildDiffIndex(
+            var lastUIUpdate = ContinuousClock.now
+            let uiInterval: Duration = .milliseconds(100)
+
+            let map = ByteCompareService.buildDiffMapIncremental(
                 leftSize: leftSize,
                 rightSize: rightSize,
-                leftByte: { offset in leftArray.byte(at: UInt64(offset)) },
-                rightByte: { offset in rightArray.byte(at: UInt64(offset)) },
+                leftBytes: { range in
+                    leftArray.bytes(in: UInt64(range.lowerBound)..<UInt64(range.upperBound))
+                },
+                rightBytes: { range in
+                    rightArray.bytes(in: UInt64(range.lowerBound)..<UInt64(range.upperBound))
+                },
                 bucketCount: bucketCount
-            )
+            ) { partialMap, progress in
+                let now = ContinuousClock.now
+                guard progress >= 1.0 || now - lastUIUpdate >= uiInterval else { return }
+                lastUIUpdate = now
+
+                Task { @MainActor in
+                    guard generation == self.comparisonDiffMapGeneration,
+                          case .comparison = self.paneMode else { return }
+                    self.comparisonDiffMap = partialMap
+                    self.diffMapProgress = progress
+                }
+            }
 
             await MainActor.run {
                 guard generation == self.comparisonDiffMapGeneration,
                       case .comparison = self.paneMode else { return }
-                self.comparisonDiffIndex = index
+                self.comparisonDiffMap = map
                 self.isDiffMapLoading = false
+                self.diffMapProgress = 1
             }
         }
     }
@@ -222,6 +262,7 @@ final class DocumentPaneViewModel: Identifiable {
         selection = nil
         highlights = []
         scrollTargetOffset = nil
+        scrollSessionID &+= 1
         showCRCSheet = false
         showHashSheet = false
         showFillDialog = false
@@ -241,6 +282,14 @@ final class DocumentPaneViewModel: Identifiable {
         histogramTitle = ""
         histogramFileName = ""
         histogramByteCount = 0
+        histogramUniqueValueCount = 0
+        histogramTopEntries = []
+        isHistogramLoading = false
+        histogramProgress = 0
+        histogramGeneration &+= 1
+        isHistogramLoading = false
+        histogramProgress = 0
+        histogramGeneration &+= 1
         terminalHistory = []
         editingOffset = nil
         editingHexText = ""
@@ -282,7 +331,17 @@ final class DocumentPaneViewModel: Identifiable {
     }
 
     func diffHighlight(at offset: Int, side: CompareSide) -> HighlightColor? {
-        comparisonDiffIndex?.highlight(at: offset, side: side)
+        guard case .comparison(let left, let right) = paneMode else { return nil }
+        let leftByte = offset < left.fileSize ? left.byte(at: offset) : nil
+        let rightByte = offset < right.fileSize ? right.byte(at: offset) : nil
+        return ByteCompareService.highlightColor(
+            at: offset,
+            side: side,
+            leftSize: left.fileSize,
+            rightSize: right.fileSize,
+            leftByte: leftByte,
+            rightByte: rightByte
+        )
     }
 
     func comparisonSelection(for side: CompareSide) -> HexSelection? {
@@ -324,33 +383,109 @@ final class DocumentPaneViewModel: Identifiable {
     }
 
     func comparisonRowContext(for rowIndex: Int) -> CompareRowContext {
+        if let cached = compareRowCache.context(for: rowIndex) {
+            return cached
+        }
+
+        if let loaded = loadComparisonRowSynchronously(for: rowIndex) {
+            return loaded
+        }
+
+        scheduleComparisonRowLoad(around: rowIndex)
+        return emptyCompareRowContext(for: rowIndex)
+    }
+
+    func navigateComparison(to row: Int) {
+        guard row >= 0, row < rowCount else { return }
+        scrollTargetOffset = row * bytesPerRow.rawValue
+        Task {
+            await loadComparisonRows(around: row, radius: 64, cancelPrevious: true)
+        }
+    }
+
+    func loadComparisonRows(around row: Int, radius: Int = 64, cancelPrevious: Bool = true) async {
+        guard case .comparison(let left, let right) = paneMode else { return }
+
+        let startRow = max(0, row - radius)
+        let endRow = min(rowCount, row + radius + 1)
+        guard startRow < endRow else { return }
+
+        let rowRange = startRow..<endRow
+        let needsLoad = rowRange.contains { compareRowCache.context(for: $0) == nil }
+        guard needsLoad else { return }
+
+        if cancelPrevious {
+            comparisonRowLoadTask?.cancel()
+        } else if comparisonRowLoadTask != nil {
+            return
+        }
+
+        comparisonRowLoadGeneration &+= 1
+        let loadGeneration = comparisonRowLoadGeneration
+
+        let cacheGeneration = compareRowCacheGeneration
+        let leftArray = left.byteArray
+        let rightArray = right.byteArray
+        let leftSize = left.fileSize
+        let rightSize = right.fileSize
         let bytesPerRowValue = bytesPerRow.rawValue
-        let offset = HexFormatter.rowOffset(for: rowIndex, bytesPerRow: bytesPerRowValue)
+        let fileSizeSnapshot = fileSize
+
+        let task = Task.detached(priority: .userInitiated) {
+            let batch = CompareRowLoader.buildContexts(
+                for: rowRange,
+                bytesPerRow: bytesPerRowValue,
+                fileSize: fileSizeSnapshot,
+                leftArray: leftArray,
+                rightArray: rightArray,
+                leftSize: leftSize,
+                rightSize: rightSize
+            )
+
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                guard !Task.isCancelled,
+                      cacheGeneration == self.compareRowCacheGeneration,
+                      case .comparison = self.paneMode else { return }
+                self.compareRowCache.storeBatch(batch)
+                self.comparisonRowRevision &+= 1
+            }
+        }
+
+        comparisonRowLoadTask = task
+        await task.value
+        if loadGeneration == comparisonRowLoadGeneration {
+            comparisonRowLoadTask = nil
+        }
+    }
+
+    func preloadComparisonRows(for visibleRange: ClosedRange<Int>) {
+        let midpoint = (visibleRange.lowerBound + visibleRange.upperBound) / 2
+        Task {
+            await loadComparisonRows(around: midpoint, radius: 64, cancelPrevious: false)
+        }
+    }
+
+    private func scheduleComparisonRowLoad(around row: Int) {
+        Task {
+            await loadComparisonRows(around: row, radius: 48, cancelPrevious: false)
+        }
+    }
+
+    private func emptyCompareRowContext(for rowIndex: Int) -> CompareRowContext {
+        let bytesPerRowValue = bytesPerRow.rawValue
         let count = HexFormatter.byteCount(
             forRow: rowIndex,
             fileSize: fileSize,
             bytesPerRow: bytesPerRowValue
         )
-
-        let leftBytes = comparisonRowBytes(for: rowIndex, side: .left)
-        let rightBytes = comparisonRowBytes(for: rowIndex, side: .right)
-
-        guard count > 0, let index = comparisonDiffIndex else {
-            let empty = Array<HighlightColor?>(repeating: nil, count: count)
-            return CompareRowContext(
-                leftBytes: leftBytes,
-                rightBytes: rightBytes,
-                leftHighlights: empty,
-                rightHighlights: empty
-            )
-        }
-
-        let range = offset..<(offset + count)
+        let emptyHighlights = Array<HighlightColor?>(repeating: nil, count: max(count, 0))
         return CompareRowContext(
-            leftBytes: leftBytes,
-            rightBytes: rightBytes,
-            leftHighlights: index.highlights(in: range, side: .left),
-            rightHighlights: index.highlights(in: range, side: .right)
+            leftBytes: [],
+            rightBytes: [],
+            leftHighlights: emptyHighlights,
+            rightHighlights: emptyHighlights
         )
     }
 
@@ -530,27 +665,121 @@ final class DocumentPaneViewModel: Identifiable {
     }
 
     func openHistogramForAll() {
-        guard fileSize > 0 else { return }
-        histogramCounts = HistogramBuilder.build(in: 0..<fileSize) { [weak self] range in
-            self?.bytes(in: range) ?? []
-        }
-        histogramByteCount = fileSize
-        histogramFileName = document?.displayName ?? String(localized: "Untitled")
+        guard fileSize > 0, let document else { return }
+
+        histogramGeneration &+= 1
+        let generation = histogramGeneration
+        let byteArray = document.byteArray
+        let fileSizeSnapshot = fileSize
+
+        resetHistogramPresentation(byteCount: fileSizeSnapshot)
+        histogramFileName = document.displayName
         histogramTitle = String(localized: "Entire file")
+        isHistogramLoading = true
+        histogramProgress = 0
         showHistogramSheet = true
+
+        Task.detached {
+            var lastUIUpdate = ContinuousClock.now
+            let uiInterval: Duration = .milliseconds(50)
+            var chunkIndex = 0
+
+            let counts = await HistogramBuilder.buildIncremental(
+                in: 0..<fileSizeSnapshot,
+                bytesProvider: { range in
+                    byteArray.bytes(in: UInt64(range.lowerBound)..<UInt64(range.upperBound))
+                },
+                chunkSize: HistogramBuilder.progressChunkSize,
+                onChunk: { counts, progress in
+                    chunkIndex += 1
+                    let now = ContinuousClock.now
+                    let shouldPublish = progress >= 1.0
+                        || chunkIndex == 1
+                        || now - lastUIUpdate >= uiInterval
+                    guard shouldPublish else { return }
+                    lastUIUpdate = now
+
+                    let countsSnapshot = counts
+                    let updateTopEntries = progress >= 1.0 || chunkIndex % 4 == 0
+                    await MainActor.run {
+                        guard generation == self.histogramGeneration else { return }
+                        self.applyHistogramChunk(
+                            counts: countsSnapshot,
+                            progress: progress,
+                            updateTopEntries: updateTopEntries
+                        )
+                    }
+                }
+            )
+
+            await MainActor.run {
+                guard generation == self.histogramGeneration else { return }
+                self.applyHistogramResults(counts)
+            }
+        }
     }
 
     func openHistogramForSelection() {
         guard let selection else { return }
-        let data = bytes(in: selection.start..<(selection.end + 1))
-        guard !data.isEmpty else { return }
-        histogramCounts = HistogramBuilder.build(from: data)
-        histogramByteCount = data.count
-        histogramFileName = document?.displayName ?? String(localized: "Untitled")
+        let selectionStart = selection.start
+        let selectionEnd = selection.end
+        let byteCount = selection.length
+        guard byteCount > 0 else { return }
+
+        histogramGeneration &+= 1
+        let generation = histogramGeneration
+        guard let document else { return }
+        let byteArray = document.byteArray
+
+        resetHistogramPresentation(byteCount: byteCount)
+        histogramFileName = document.displayName
         histogramTitle = String(
-            localized: "Selection: 0x\(HexFormatter.offsetString(for: selection.start)) – 0x\(HexFormatter.offsetString(for: selection.end))"
+            localized: "Selection: 0x\(HexFormatter.offsetString(for: selectionStart)) – 0x\(HexFormatter.offsetString(for: selectionEnd))"
         )
+        isHistogramLoading = true
+        histogramProgress = 0
         showHistogramSheet = true
+
+        let range = selectionStart..<(selectionEnd + 1)
+
+        Task.detached {
+            var lastUIUpdate = ContinuousClock.now
+            let uiInterval: Duration = .milliseconds(50)
+            var chunkIndex = 0
+
+            let counts = await HistogramBuilder.buildIncremental(
+                in: range,
+                bytesProvider: { subrange in
+                    byteArray.bytes(in: UInt64(subrange.lowerBound)..<UInt64(subrange.upperBound))
+                },
+                chunkSize: HistogramBuilder.progressChunkSize,
+                onChunk: { counts, progress in
+                    chunkIndex += 1
+                    let now = ContinuousClock.now
+                    let shouldPublish = progress >= 1.0
+                        || chunkIndex == 1
+                        || now - lastUIUpdate >= uiInterval
+                    guard shouldPublish else { return }
+                    lastUIUpdate = now
+
+                    let countsSnapshot = counts
+                    let updateTopEntries = progress >= 1.0 || chunkIndex % 4 == 0
+                    await MainActor.run {
+                        guard generation == self.histogramGeneration else { return }
+                        self.applyHistogramChunk(
+                            counts: countsSnapshot,
+                            progress: progress,
+                            updateTopEntries: updateTopEntries
+                        )
+                    }
+                }
+            )
+
+            await MainActor.run {
+                guard generation == self.histogramGeneration else { return }
+                self.applyHistogramResults(counts)
+            }
+        }
     }
 
     func openFindSheet() {
@@ -714,14 +943,80 @@ final class DocumentPaneViewModel: Identifiable {
     }
 
     func rowBytes(for rowIndex: Int) -> [UInt8] {
-        let offset = HexFormatter.rowOffset(for: rowIndex, bytesPerRow: bytesPerRow.rawValue)
-        let count = HexFormatter.byteCount(
-            forRow: rowIndex,
-            fileSize: fileSize,
-            bytesPerRow: bytesPerRow.rawValue
-        )
-        guard count > 0 else { return [] }
-        return bytes(in: offset..<(offset + count))
+        if let cached = documentRowCache.bytes(for: rowIndex) {
+            return cached
+        }
+        return loadRowBytesSynchronously(for: rowIndex)
+    }
+
+    func ensureDocumentRowsLoadedSynchronously(for range: Range<Int>) {
+        guard let document, case .document = paneMode, !range.isEmpty else { return }
+
+        var didLoad = false
+        for row in range {
+            guard row >= 0, row < rowCount else { continue }
+            if documentRowCache.bytes(for: row) == nil {
+                _ = loadRowBytesSynchronously(for: row)
+                didLoad = true
+            }
+        }
+
+        if didLoad {
+            documentRowRevision &+= 1
+        }
+    }
+
+    func ensureComparisonRowsLoadedSynchronously(for range: Range<Int>) {
+        guard case .comparison = paneMode, !range.isEmpty else { return }
+
+        var didLoad = false
+        for row in range {
+            guard row >= 0, row < rowCount else { continue }
+            if compareRowCache.context(for: row) == nil,
+               loadComparisonRowSynchronously(for: row) != nil {
+                didLoad = true
+            }
+        }
+
+        if didLoad {
+            comparisonRowRevision &+= 1
+        }
+    }
+
+    func prefetchDocumentRows(for range: Range<Int>) {
+        guard let document, case .document = paneMode else { return }
+        guard !range.isEmpty else { return }
+        guard documentRowCache.missingRows(in: range) else { return }
+
+        documentRowLoadTask?.cancel()
+        documentRowLoadGeneration &+= 1
+        let loadGeneration = documentRowLoadGeneration
+        let cacheGeneration = documentRowCacheGeneration
+        let byteArray = document.byteArray
+        let bytesPerRowValue = bytesPerRow.rawValue
+        let fileSizeSnapshot = fileSize
+
+        let task = Task.detached(priority: .userInitiated) {
+            let batch = DocumentRowLoader.loadRows(
+                for: range,
+                bytesPerRow: bytesPerRowValue,
+                fileSize: fileSizeSnapshot,
+                byteArray: byteArray
+            )
+
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                guard !Task.isCancelled,
+                      loadGeneration == self.documentRowLoadGeneration,
+                      cacheGeneration == self.documentRowCacheGeneration,
+                      case .document = self.paneMode else { return }
+                self.documentRowCache.storeBatch(batch)
+                self.documentRowRevision &+= 1
+            }
+        }
+
+        documentRowLoadTask = task
     }
 
     func typeHexDigit(_ character: Character) {
@@ -820,14 +1115,14 @@ final class DocumentPaneViewModel: Identifiable {
             }
             document.markDirty()
             registerAppendUndo(at: offset, value: value)
-            bumpDataRevision()
+            bumpDataRevisionAfterEdit(at: offset)
         } else {
             guard let oldValue = byte(at: offset) else { return }
             guard value != oldValue else { return }
             _ = document.replaceByte(at: offset, with: value)
             document.markDirty()
             registerUndo(at: offset, oldValue: oldValue, newValue: value)
-            bumpDataRevision()
+            bumpDataRevisionAfterEdit(at: offset)
         }
     }
 
@@ -837,7 +1132,7 @@ final class DocumentPaneViewModel: Identifiable {
         document.appendByte(value)
         document.markDirty()
         registerAppendUndo(at: fileSize - 1, value: value)
-        bumpDataRevision()
+        bumpDataRevisionAfterEdit(at: fileSize - 1)
     }
 
     @discardableResult
@@ -846,7 +1141,7 @@ final class DocumentPaneViewModel: Identifiable {
 
         document.appendByte(0)
         document.markDirty()
-        bumpDataRevision()
+        bumpDataRevisionAfterEdit(at: fileSize - 1)
         return true
     }
 
@@ -929,7 +1224,7 @@ final class DocumentPaneViewModel: Identifiable {
         _ = document.replaceByte(at: offset, with: newValue)
         document.markDirty()
         selection = .single(at: offset)
-        bumpDataRevision()
+        bumpDataRevisionAfterEdit(at: offset)
     }
 
     private func resetComparisonMode() {
@@ -940,13 +1235,112 @@ final class DocumentPaneViewModel: Identifiable {
         comparisonLeftSelection = nil
         comparisonRightSelection = nil
         comparisonActiveSide = .left
-        comparisonDiffIndex = nil
+        comparisonDiffMap = nil
         isDiffMapLoading = false
+        diffMapProgress = 0
         comparisonDiffMapGeneration &+= 1
+        comparisonRowLoadTask?.cancel()
+        comparisonRowLoadTask = nil
+        comparisonRowLoadGeneration &+= 1
+        compareRowCache.invalidate()
+        compareRowCacheGeneration &+= 1
+        comparisonRowRevision &+= 1
+        histogramGeneration &+= 1
+        isHistogramLoading = false
+        histogramProgress = 0
     }
 
-    private func bumpDataRevision() {
+    private func resetHistogramPresentation(byteCount: Int) {
+        histogramCounts = Array(repeating: 0, count: 256)
+        histogramByteCount = byteCount
+        histogramUniqueValueCount = 0
+        histogramTopEntries = []
+    }
+
+    private func applyHistogramChunk(
+        counts: [Int],
+        progress: Double,
+        updateTopEntries: Bool = true
+    ) {
+        histogramCounts = counts
+        histogramProgress = progress
+
+        guard updateTopEntries else { return }
+        let entries = HistogramBuilder.nonZeroEntries(in: counts)
+        histogramUniqueValueCount = entries.count
+        histogramTopEntries = Array(entries.prefix(16))
+    }
+
+    private func applyHistogramResults(_ counts: [Int]) {
+        applyHistogramChunk(counts: counts, progress: 1, updateTopEntries: true)
+        isHistogramLoading = false
+    }
+
+    private func bumpDataRevision(fullInvalidate: Bool = true) {
         dataRevision &+= 1
+        guard fullInvalidate else { return }
+        documentRowCache.invalidate()
+        documentRowCacheGeneration &+= 1
+        documentRowLoadTask?.cancel()
+        documentRowLoadTask = nil
+        documentRowLoadGeneration &+= 1
+    }
+
+    private func bumpDataRevisionAfterEdit(at offset: Int) {
+        patchRowCache(forOffset: offset)
+        bumpDataRevision(fullInvalidate: false)
+    }
+
+    private func patchRowCache(forOffset offset: Int) {
+        let bytesPerRowValue = bytesPerRow.rawValue
+        guard bytesPerRowValue > 0 else { return }
+        patchRowCache(forRow: offset / bytesPerRowValue)
+    }
+
+    private func patchRowCache(forRow row: Int) {
+        guard let document else { return }
+        let bytesPerRowValue = bytesPerRow.rawValue
+        let offset = HexFormatter.rowOffset(for: row, bytesPerRow: bytesPerRowValue)
+        let count = HexFormatter.byteCount(
+            forRow: row,
+            fileSize: fileSize,
+            bytesPerRow: bytesPerRowValue
+        )
+        guard count > 0 else { return }
+        let bytes = document.bytes(in: offset..<(offset + count))
+        documentRowCache.patch(bytes, for: row)
+    }
+
+    private func loadComparisonRowSynchronously(for rowIndex: Int) -> CompareRowContext? {
+        guard case .comparison(let left, let right) = paneMode else { return nil }
+        let rowRange = rowIndex..<(rowIndex + 1)
+        let batch = CompareRowLoader.buildContexts(
+            for: rowRange,
+            bytesPerRow: bytesPerRow.rawValue,
+            fileSize: fileSize,
+            leftArray: left.byteArray,
+            rightArray: right.byteArray,
+            leftSize: left.fileSize,
+            rightSize: right.fileSize
+        )
+        guard let context = batch[rowIndex] else { return nil }
+        compareRowCache.store(context, for: rowIndex)
+        return context
+    }
+
+    private func loadRowBytesSynchronously(for rowIndex: Int) -> [UInt8] {
+        guard let document else { return [] }
+        let bytesPerRowValue = bytesPerRow.rawValue
+        let offset = HexFormatter.rowOffset(for: rowIndex, bytesPerRow: bytesPerRowValue)
+        let count = HexFormatter.byteCount(
+            forRow: rowIndex,
+            fileSize: fileSize,
+            bytesPerRow: bytesPerRowValue
+        )
+        guard count > 0 else { return [] }
+        let bytes = document.bytes(in: offset..<(offset + count))
+        documentRowCache.patch(bytes, for: rowIndex)
+        return bytes
     }
 
     private func selectionExportSuggestedName(fileExtension: String) -> String {

@@ -10,6 +10,7 @@ struct HexSelectionHandlingView: NSViewRepresentable {
     let rowCount: Int
     let fileSize: Int
     let bytesPerRow: Int
+    let firstVisibleRow: Int
     let editingOffset: Int?
     let selection: HexSelection?
     let isReadOnly: Bool
@@ -34,6 +35,7 @@ struct HexSelectionHandlingView: NSViewRepresentable {
         rowCount: Int,
         fileSize: Int,
         bytesPerRow: Int,
+        firstVisibleRow: Int = 0,
         editingOffset: Int?,
         selection: HexSelection?,
         isReadOnly: Bool = false,
@@ -57,6 +59,7 @@ struct HexSelectionHandlingView: NSViewRepresentable {
         self.rowCount = rowCount
         self.fileSize = fileSize
         self.bytesPerRow = bytesPerRow
+        self.firstVisibleRow = firstVisibleRow
         self.editingOffset = editingOffset
         self.selection = selection
         self.isReadOnly = isReadOnly
@@ -305,7 +308,8 @@ struct HexSelectionHandlingView: NSViewRepresentable {
             at: point,
             rowCount: rowCount,
             fileSize: fileSize,
-            bytesPerRow: bytesPerRow
+            bytesPerRow: bytesPerRow,
+            firstVisibleRow: firstVisibleRow
         )
     }
 }

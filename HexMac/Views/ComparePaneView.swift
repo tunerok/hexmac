@@ -10,7 +10,6 @@ struct ComparePaneView: View {
     @Bindable var pane: DocumentPaneViewModel
 
     @State private var visibleRowRange: ClosedRange<Int> = 0...0
-    @State private var scrollToRow: Int?
 
     var body: some View {
         Group {
@@ -29,22 +28,23 @@ struct ComparePaneView: View {
                         CompareHexGridView(
                             pane: pane,
                             visibleRowRange: $visibleRowRange,
-                            scrollToRow: $scrollToRow,
                             onActivate: {
                                 workspace.activatePane(id: pane.id)
                             }
                         )
+                        .id(pane.scrollSessionID)
                         .layoutPriority(1)
 
                         Divider()
 
                         CompareMinimapView(
-                            diffMap: pane.comparisonDiffIndex?.map,
+                            diffMap: pane.comparisonDiffMap,
                             isLoading: pane.isDiffMapLoading,
+                            progress: pane.isDiffMapLoading ? pane.diffMapProgress : nil,
                             visibleRowRange: visibleRowRange,
                             rowCount: pane.rowCount,
                             onNavigate: { row in
-                                scrollToRow = row
+                                pane.navigateComparison(to: row)
                             }
                         )
                     }

@@ -8,19 +8,37 @@ import SwiftUI
 struct CompareMinimapView: View {
     let diffMap: CompareDiffMap?
     let isLoading: Bool
+    let progress: Double?
     let visibleRowRange: ClosedRange<Int>
     let rowCount: Int
     let onNavigate: (Int) -> Void
 
+    @State private var lastNavigatedRow: Int?
+    @State private var lastNavigateTime = Date.distantPast
+
     private let stripWidth: CGFloat = 14
     private let stripGap: CGFloat = 2
+    private let scrubInterval: TimeInterval = 0.075
 
     var body: some View {
         VStack(spacing: 0) {
             if isLoading {
-                ProgressView()
+                if let progress {
+                    ProgressView(value: progress) {
+                        Text(String(localized: "Building map…"))
+                            .font(.caption2)
+                    } currentValueLabel: {
+                        Text("\(Int(progress * 100))%")
+                            .font(.caption2.monospacedDigit())
+                    }
                     .controlSize(.small)
+                    .padding(.horizontal, 4)
                     .padding(.top, 8)
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.top, 8)
+                }
             }
 
             GeometryReader { geometry in
@@ -43,7 +61,18 @@ struct CompareMinimapView: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
-                            navigate(toY: value.location.y, height: geometry.size.height)
+                            navigate(
+                                toY: value.location.y,
+                                height: geometry.size.height,
+                                isFinal: false
+                            )
+                        }
+                        .onEnded { value in
+                            navigate(
+                                toY: value.location.y,
+                                height: geometry.size.height,
+                                isFinal: true
+                            )
                         }
                 )
             }
@@ -93,10 +122,19 @@ struct CompareMinimapView: View {
             .allowsHitTesting(false)
     }
 
-    private func navigate(toY y: CGFloat, height: CGFloat) {
+    private func navigate(toY y: CGFloat, height: CGFloat, isFinal: Bool) {
         guard rowCount > 0, height > 0 else { return }
         let fraction = min(1, max(0, y / height))
         let row = min(rowCount - 1, Int(fraction * CGFloat(rowCount)))
+
+        if !isFinal {
+            if row == lastNavigatedRow { return }
+            let now = Date()
+            if now.timeIntervalSince(lastNavigateTime) < scrubInterval { return }
+            lastNavigateTime = now
+        }
+
+        lastNavigatedRow = row
         onNavigate(row)
     }
 

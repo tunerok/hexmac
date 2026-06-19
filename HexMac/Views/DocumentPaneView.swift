@@ -22,6 +22,7 @@ struct DocumentPaneView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 hexGrid
+                    .id(pane.scrollSessionID)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -36,6 +37,7 @@ struct DocumentPaneView: View {
             fileSize: pane.fileSize,
             bytesPerRow: pane.bytesPerRow.rawValue,
             dataRevision: pane.dataRevision,
+            documentRowRevision: pane.documentRowRevision,
             selection: pane.selection,
             editingOffset: pane.editingOffset,
             scrollTargetOffset: pane.scrollTargetOffset,
@@ -43,6 +45,12 @@ struct DocumentPaneView: View {
             textEncoding: pane.textEncoding,
             highlightColor: { pane.highlight(at: $0) },
             rowBytes: { pane.rowBytes(for: $0) },
+            onPrefetchRows: { range in
+                pane.prefetchDocumentRows(for: range)
+            },
+            onEnsureVisibleRowsLoaded: { range in
+                pane.ensureDocumentRowsLoadedSynchronously(for: range)
+            },
             onBeginSelection: { offset, extending in
                 workspace.activatePane(id: pane.id)
                 pane.beginSelection(at: offset, extending: extending)

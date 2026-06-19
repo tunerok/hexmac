@@ -94,8 +94,9 @@ struct CompareRowContext {
 
 enum ByteCompareService {
     nonisolated static let defaultBucketCount = 400
+    nonisolated static let largeFileThreshold = 16 * 1024 * 1024
 
-    static func highlightColor(for kind: DiffRegionKind) -> HighlightColor? {
+    nonisolated static func highlightColor(for kind: DiffRegionKind) -> HighlightColor? {
         switch kind {
         case .deleted:
             return .red
@@ -108,7 +109,7 @@ enum ByteCompareService {
         }
     }
 
-    static func highlightColor(
+    nonisolated static func highlightColor(
         at offset: Int,
         side: CompareSide,
         leftSize: Int,
@@ -124,6 +125,38 @@ enum ByteCompareService {
             side: side
         ), kind != .equal else { return nil }
         return highlightColor(for: kind)
+    }
+
+    nonisolated static func rowHighlights(
+        leftBytes: [UInt8],
+        rightBytes: [UInt8],
+        rowOffset: Int,
+        leftSize: Int,
+        rightSize: Int,
+        side: CompareSide
+    ) -> [HighlightColor?] {
+        let count = max(leftBytes.count, rightBytes.count)
+        guard count > 0 else { return [] }
+
+        return (0..<count).map { index in
+            let offset = rowOffset + index
+            let leftByte: UInt8? = offset < leftSize && index < leftBytes.count ? leftBytes[index] : nil
+            let rightByte: UInt8? = offset < rightSize && index < rightBytes.count ? rightBytes[index] : nil
+            return highlightColor(
+                at: offset,
+                side: side,
+                leftSize: leftSize,
+                rightSize: rightSize,
+                leftByte: leftByte,
+                rightByte: rightByte
+            )
+        }
+    }
+
+    nonisolated static func samplingStride(for totalBytes: Int, bucketCount: Int) -> Int {
+        guard totalBytes > largeFileThreshold, bucketCount > 0 else { return 1 }
+        let bucketWidth = max(1, (totalBytes + bucketCount - 1) / bucketCount)
+        return max(1, bucketWidth / 64)
     }
 
     nonisolated static func diffKind(
@@ -323,6 +356,93 @@ enum ByteCompareService {
         ).map
     }
 
+    nonisolated static func buildDiffMapIncremental(
+        leftSize: Int,
+        rightSize: Int,
+        leftBytes: (Range<Int>) -> [UInt8],
+        rightBytes: (Range<Int>) -> [UInt8],
+        bucketCount: Int = defaultBucketCount,
+        chunkSize: Int = ChunkedByteReader.defaultChunkSize,
+        strideOverride: Int? = nil,
+        onChunk: ((CompareDiffMap, Double) -> Void)? = nil
+    ) -> CompareDiffMap {
+        let total = max(leftSize, rightSize)
+        let count = max(1, bucketCount)
+        var leftKinds = Array(repeating: DiffRegionKind.equal, count: count)
+        var rightKinds = Array(repeating: DiffRegionKind.equal, count: count)
+
+        guard total > 0 else {
+            let map = CompareDiffMap(
+                bucketCount: count,
+                totalBytes: 0,
+                leftKinds: leftKinds,
+                rightKinds: rightKinds
+            )
+            onChunk?(map, 1)
+            return map
+        }
+
+        let stride = strideOverride ?? samplingStride(for: total, bucketCount: count)
+        var cursor = 0
+
+        while cursor < total {
+            let chunkEnd = min(total, cursor + chunkSize)
+            let leftRange = cursor..<min(leftSize, chunkEnd)
+            let rightRange = cursor..<min(rightSize, chunkEnd)
+            let leftChunk = leftRange.isEmpty ? [] : leftBytes(leftRange)
+            let rightChunk = rightRange.isEmpty ? [] : rightBytes(rightRange)
+
+            let sampleOffsets = sampleOffsets(
+                from: cursor,
+                to: chunkEnd,
+                stride: stride,
+                total: total,
+                bucketCount: count
+            )
+
+            for offset in sampleOffsets {
+                let leftByte = byteInChunk(
+                    at: offset,
+                    fileSize: leftSize,
+                    chunkStart: leftRange.lowerBound,
+                    chunk: leftChunk
+                )
+                let rightByte = byteInChunk(
+                    at: offset,
+                    fileSize: rightSize,
+                    chunkStart: rightRange.lowerBound,
+                    chunk: rightChunk
+                )
+                updateBucketKinds(
+                    offset: offset,
+                    leftByte: leftByte,
+                    rightByte: rightByte,
+                    total: total,
+                    bucketCount: count,
+                    leftKinds: &leftKinds,
+                    rightKinds: &rightKinds
+                )
+            }
+
+            cursor = chunkEnd
+            let progress = Double(cursor) / Double(total)
+            let map = CompareDiffMap(
+                bucketCount: count,
+                totalBytes: total,
+                leftKinds: leftKinds,
+                rightKinds: rightKinds
+            )
+            onChunk?(map, progress)
+        }
+
+        return CompareDiffMap(
+            bucketCount: count,
+            totalBytes: total,
+            leftKinds: leftKinds,
+            rightKinds: rightKinds
+        )
+    }
+
     nonisolated static func formatTextReport(
         entries: [DiffEntry],
         leftName: String,
@@ -397,6 +517,89 @@ enum ByteCompareService {
     nonisolated static func byte(at offset: Int, in size: Int, provider: (Int) -> UInt8?) -> UInt8? {
         guard offset < size else { return nil }
         return provider(offset)
+    }
+
+    nonisolated private static func sampleOffsets(
+        from rangeStart: Int,
+        to rangeEnd: Int,
+        stride: Int,
+        total: Int,
+        bucketCount: Int
+    ) -> [Int] {
+        guard rangeStart < rangeEnd else { return [] }
+
+        var offsets = Set<Int>()
+        var offset = rangeStart
+        while offset < rangeEnd {
+            offsets.insert(offset)
+            let next = offset + stride
+            if next >= rangeEnd, offset < rangeEnd - 1 {
+                offset = rangeEnd - 1
+            } else {
+                offset = next
+            }
+        }
+
+        if stride > 1, total > 0, bucketCount > 0 {
+            for bucket in 0..<bucketCount {
+                let bucketStart = (bucket * total) / bucketCount
+                let bucketEnd = ((bucket + 1) * total) / bucketCount
+                guard bucketEnd > bucketStart else { continue }
+
+                let bucketWidth = bucketEnd - bucketStart
+                let bucketStride = max(1, bucketWidth / 64)
+                var bucketOffset = bucketStart
+                while bucketOffset < bucketEnd {
+                    if bucketOffset >= rangeStart, bucketOffset < rangeEnd {
+                        offsets.insert(bucketOffset)
+                    }
+                    bucketOffset += bucketStride
+                }
+
+                let lastInBucket = bucketEnd - 1
+                if lastInBucket >= rangeStart, lastInBucket < rangeEnd {
+                    offsets.insert(lastInBucket)
+                }
+            }
+        }
+
+        return offsets.sorted()
+    }
+
+    nonisolated private static func byteInChunk(
+        at offset: Int,
+        fileSize: Int,
+        chunkStart: Int,
+        chunk: [UInt8]
+    ) -> UInt8? {
+        guard offset < fileSize else { return nil }
+        let local = offset - chunkStart
+        guard local >= 0, local < chunk.count else { return nil }
+        return chunk[local]
+    }
+
+    nonisolated private static func bucketIndex(for offset: Int, total: Int, bucketCount: Int) -> Int {
+        guard total > 0, bucketCount > 0 else { return 0 }
+        return min(bucketCount - 1, (offset * bucketCount) / total)
+    }
+
+    nonisolated private static func updateBucketKinds(
+        offset: Int,
+        leftByte: UInt8?,
+        rightByte: UInt8?,
+        total: Int,
+        bucketCount: Int,
+        leftKinds: inout [DiffRegionKind],
+        rightKinds: inout [DiffRegionKind]
+    ) {
+        let bucket = bucketIndex(for: offset, total: total, bucketCount: bucketCount)
+        let kinds = diffKinds(leftByte: leftByte, rightByte: rightByte)
+        if kinds.left != .equal {
+            leftKinds[bucket] = maxPriority(leftKinds[bucket], kinds.left)
+        }
+        if kinds.right != .equal {
+            rightKinds[bucket] = maxPriority(rightKinds[bucket], kinds.right)
+        }
     }
 
     nonisolated private static func diffKinds(

@@ -6,52 +6,95 @@
 import SwiftUI
 
 struct CompareHexGridView: View {
+    private static let scrollbarColumnWidth: CGFloat = 16
+
     @Bindable var pane: DocumentPaneViewModel
     @Binding var visibleRowRange: ClosedRange<Int>
-    @Binding var scrollToRow: Int?
     let onActivate: () -> Void
+
+    @State private var firstVisibleRow = 0
+
+    private var scrollTargetRow: Int? {
+        guard let target = pane.scrollTargetOffset, pane.bytesPerRow.rawValue > 0 else { return nil }
+        return target / pane.bytesPerRow.rawValue
+    }
 
     var body: some View {
         GeometryReader { geometry in
-            ScrollView(.horizontal) {
-                VStack(alignment: .leading, spacing: 0) {
-                    pairedHeaders
+            let gridHeight = verticalScrollHeight(in: geometry)
+            let visibleRowCount = max(
+                1,
+                Int((gridHeight - HexGridLayout.contentPadding) / HexGridLayout.rowHeight)
+            )
 
-                    Divider()
-
-                    ScrollViewReader { proxy in
-                        ScrollView(.vertical) {
-                            LazyVStack(alignment: .leading, spacing: 0) {
-                                ForEach(0..<pane.rowCount, id: \.self) { rowIndex in
-                                    pairedRow(rowIndex: rowIndex)
-                                        .id(rowIndex)
-                                }
-                            }
-                            .overlay {
-                                selectionOverlay
-                            }
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    ScrollView(.horizontal) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            pairedHeaders
+                            Divider()
                         }
-                        .frame(height: verticalScrollHeight(in: geometry))
-                        .onScrollGeometryChange(for: ClosedRange<Int>.self) { geometry in
-                            visibleRowRange(from: geometry)
-                        } action: { _, range in
-                            guard range != visibleRowRange else { return }
-                            visibleRowRange = range
-                        }
-                        .onChange(of: pane.scrollTargetOffset) { _, target in
-                            guard let target, pane.bytesPerRow.rawValue > 0 else { return }
-                            let rowIndex = target / pane.bytesPerRow.rawValue
-                            proxy.scrollTo(rowIndex, anchor: .center)
-                            pane.clearScrollTarget()
-                        }
-                        .onChange(of: scrollToRow) { _, row in
-                            guard let row else { return }
-                            proxy.scrollTo(row, anchor: .top)
-                            scrollToRow = nil
-                        }
+                        .padding(.leading, HexGridLayout.contentPadding)
+                        .padding(.trailing, HexGridLayout.contentPadding)
                     }
+                    Color.clear
+                        .frame(width: Self.scrollbarColumnWidth)
+                        .padding(.trailing, HexGridLayout.contentPadding)
                 }
-                .padding(HexGridLayout.contentPadding)
+
+                HStack(spacing: 0) {
+                    ScrollView(.horizontal) {
+                        HexViewportScrollView(
+                            firstVisibleRow: $firstVisibleRow,
+                            rowCount: pane.rowCount,
+                            bytesPerRow: pane.bytesPerRow.rawValue,
+                            visibleRowCount: visibleRowCount,
+                            scrollTargetRow: scrollTargetRow,
+                            scrollAnchor: .top,
+                            linkedScrollRow: nil,
+                            onVisibleRowChanged: nil,
+                            onVisibleRowRangeChanged: { range in
+                                guard range != visibleRowRange else { return }
+                                visibleRowRange = range
+                                pane.preloadComparisonRows(for: range)
+                            },
+                            onPrefetchRange: { range in
+                                guard !range.isEmpty else { return }
+                                let midpoint = (range.lowerBound + range.upperBound) / 2
+                                Task {
+                                    await pane.loadComparisonRows(
+                                        around: midpoint,
+                                        radius: HexScrollWindow.prefetchMargin,
+                                        cancelPrevious: false
+                                    )
+                                }
+                            },
+                            onEnsureVisibleRowsLoaded: { range in
+                                pane.ensureComparisonRowsLoadedSynchronously(for: range)
+                            },
+                            onScrollTargetHandled: {
+                                pane.clearScrollTarget()
+                            },
+                            rowContent: { rowIndex in
+                                pairedRow(rowIndex: rowIndex)
+                            },
+                            overlay: { firstVisibleRow in
+                                selectionOverlay(firstVisibleRow: firstVisibleRow)
+                            }
+                        )
+                        .frame(height: gridHeight)
+                        .padding(.leading, HexGridLayout.contentPadding)
+                        .padding(.trailing, HexGridLayout.contentPadding)
+                    }
+
+                    HexVerticalScrollbar(
+                        firstVisibleRow: $firstVisibleRow,
+                        rowCount: pane.rowCount,
+                        visibleRowCount: visibleRowCount
+                    )
+                    .frame(height: gridHeight)
+                    .padding(.trailing, HexGridLayout.contentPadding)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -97,16 +140,18 @@ struct CompareHexGridView: View {
                 columnHighlights: context.rightHighlights
             )
         }
+        .id("\(rowIndex)-\(pane.comparisonRowRevision)")
     }
 
-    private var selectionOverlay: some View {
+    private func selectionOverlay(firstVisibleRow: Int) -> some View {
         let sideWidth = Self.sideContentWidth(bytesPerRow: pane.bytesPerRow.rawValue)
 
         return HStack(spacing: 0) {
             selectionHandlingView(
                 side: .left,
                 selection: pane.comparisonLeftSelection,
-                width: sideWidth
+                width: sideWidth,
+                firstVisibleRow: firstVisibleRow
             ) { offset, extending in
                 onActivate()
                 pane.beginComparisonSelection(at: offset, side: .left, extending: extending)
@@ -123,7 +168,8 @@ struct CompareHexGridView: View {
             selectionHandlingView(
                 side: .right,
                 selection: pane.comparisonRightSelection,
-                width: sideWidth
+                width: sideWidth,
+                firstVisibleRow: firstVisibleRow
             ) { offset, extending in
                 onActivate()
                 pane.beginComparisonSelection(at: offset, side: .right, extending: extending)
@@ -141,6 +187,7 @@ struct CompareHexGridView: View {
         side: CompareSide,
         selection: HexSelection?,
         width: CGFloat,
+        firstVisibleRow: Int,
         onBegin: @escaping (Int, Bool) -> Void,
         onUpdate: @escaping (Int) -> Void,
         onEnd: @escaping (Int) -> Void,
@@ -150,6 +197,7 @@ struct CompareHexGridView: View {
             rowCount: pane.rowCount,
             fileSize: pane.fileSize,
             bytesPerRow: pane.bytesPerRow.rawValue,
+            firstVisibleRow: firstVisibleRow,
             editingOffset: nil,
             selection: selection,
             isReadOnly: true,
@@ -184,21 +232,7 @@ struct CompareHexGridView: View {
         let usedHeight = HexGridLayout.headerContentHeight
             + HexGridLayout.headerBottomPadding
             + HexGridLayout.dividerWidth
-            + HexGridLayout.contentPadding * 2
         return max(0, geometry.size.height - usedHeight)
-    }
-
-    private func visibleRowRange(from geometry: ScrollGeometry) -> ClosedRange<Int> {
-        let offsetY = geometry.contentOffset.y + geometry.contentInsets.top
-        let viewportHeight = geometry.containerSize.height
-        guard pane.rowCount > 0 else { return 0...0 }
-
-        let startRow = min(pane.rowCount - 1, max(0, Int(offsetY / HexGridLayout.rowHeight)))
-        let endRow = min(
-            pane.rowCount - 1,
-            max(startRow, Int((offsetY + viewportHeight) / HexGridLayout.rowHeight))
-        )
-        return startRow...endRow
     }
 
     static func sideContentWidth(bytesPerRow: Int) -> CGFloat {

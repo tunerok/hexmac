@@ -3,6 +3,7 @@
 //  HexMac
 //
 
+import AppKit
 import SwiftUI
 
 struct HexGridHeaderView: View {
@@ -36,6 +37,8 @@ struct HexGridHeaderView: View {
         }
         .frame(height: HexGridLayout.headerContentHeight, alignment: .leading)
         .padding(.bottom, HexGridLayout.headerBottomPadding)
-        .background(.background)
+        .background(Color(nsColor: .textBackgroundColor))
+        .compositingGroup()
+        .zIndex(1)
     }
 }

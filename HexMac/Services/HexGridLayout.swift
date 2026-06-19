@@ -50,14 +50,16 @@ enum HexGridLayout {
         at point: CGPoint,
         rowCount: Int,
         fileSize: Int,
-        bytesPerRow: Int
+        bytesPerRow: Int,
+        firstVisibleRow: Int = 0
     ) -> Int? {
         guard rowCount > 0, bytesPerRow > 0, fileSize > 0 else { return nil }
 
         let adjustedY = point.y - contentPadding
         guard adjustedY >= 0 else { return nil }
 
-        let rowIndex = Int(adjustedY / rowHeight)
+        let localRowIndex = Int(adjustedY / rowHeight)
+        let rowIndex = firstVisibleRow + localRowIndex
         guard rowIndex >= 0, rowIndex < rowCount else { return nil }
 
         let column = columnIndex(at: point.x, bytesPerRow: bytesPerRow)

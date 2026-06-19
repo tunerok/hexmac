@@ -43,7 +43,11 @@ struct WorkspaceView: View {
                     fileName: pane.histogramFileName,
                     title: pane.histogramTitle,
                     byteCount: pane.histogramByteCount,
-                    counts: pane.histogramCounts
+                    counts: pane.histogramCounts,
+                    isLoading: pane.isHistogramLoading,
+                    progress: pane.histogramProgress,
+                    uniqueValueCount: pane.histogramUniqueValueCount,
+                    topEntries: pane.histogramTopEntries
                 ) {
                     pane.showHistogramSheet = false
                 }
