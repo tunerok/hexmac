@@ -3,7 +3,6 @@
 //  HexMac
 //
 
-import CryptoKit
 import Foundation
 
 struct TerminalLine: Identifiable, Equatable {
@@ -558,10 +557,6 @@ enum TerminalCommandParser {
         }
     }
 
-    private enum HashAlgorithm: String {
-        case md5, sha1, sha256
-    }
-
     private static func runHash(
         tokens: [String],
         fileSize: Int,
@@ -586,16 +581,7 @@ enum TerminalCommandParser {
             case .failure(let error):
                 return .error(error.message)
             case .success(let bytes):
-                let digest: String
-                switch algorithm {
-                case .md5:
-                    digest = Insecure.MD5.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
-                case .sha1:
-                    digest = Insecure.SHA1.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
-                case .sha256:
-                    digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
-                }
-                return .output(digest)
+                return .output(HashAlgorithm.calculate(algorithm, data: bytes))
             }
         }
     }

@@ -379,6 +379,18 @@ final class WorkspaceViewModel {
         activePane?.openCRCSheet()
     }
 
+    func openHashForAll() {
+        activePane?.openHashForAll()
+    }
+
+    func openHashForSelection() {
+        activePane?.openHashForSelection()
+    }
+
+    func openHashSheet() {
+        activePane?.openHashSheet()
+    }
+
     func presentError(_ message: String) {
         errorMessage = message
         showError = true

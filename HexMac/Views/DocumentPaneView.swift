@@ -75,6 +75,9 @@ struct DocumentPaneView: View {
             onCalculateCRC: {
                 pane.openCRCSheet()
             },
+            onCalculateHash: {
+                pane.openHashSheet()
+            },
             onShowBinary: {
                 pane.openBinarySheet()
             },

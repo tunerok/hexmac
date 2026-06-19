@@ -19,6 +19,7 @@ final class DocumentPaneViewModel: Identifiable {
     var highlights: [HexHighlight] = []
     var scrollTargetOffset: Int?
     var showCRCSheet = false
+    var showHashSheet = false
     var showFillDialog = false
     var showHistogramSheet = false
     var showBinarySheet = false
@@ -26,6 +27,9 @@ final class DocumentPaneViewModel: Identifiable {
     var binarySelectionEnd = 0
     var binarySelectionByteCount = 0
     var crcInputBytes: [UInt8] = []
+    var hashInputBytes: [UInt8] = []
+    var hashTitle = ""
+    var hashFileName = ""
     var histogramCounts: [Int] = Array(repeating: 0, count: 256)
     var histogramTitle = ""
     var histogramFileName = ""
@@ -113,6 +117,7 @@ final class DocumentPaneViewModel: Identifiable {
         highlights = []
         scrollTargetOffset = nil
         showCRCSheet = false
+        showHashSheet = false
         showFillDialog = false
         showHistogramSheet = false
         showBinarySheet = false
@@ -120,6 +125,9 @@ final class DocumentPaneViewModel: Identifiable {
         binarySelectionEnd = 0
         binarySelectionByteCount = 0
         crcInputBytes = []
+        hashInputBytes = []
+        hashTitle = ""
+        hashFileName = ""
         histogramCounts = Array(repeating: 0, count: 256)
         histogramTitle = ""
         histogramFileName = ""
@@ -222,6 +230,30 @@ final class DocumentPaneViewModel: Identifiable {
         guard let selection else { return }
         crcInputBytes = bytes(in: selection.start..<(selection.end + 1))
         showCRCSheet = true
+    }
+
+    func openHashForAll() {
+        guard fileSize > 0 else { return }
+        hashInputBytes = bytes(in: 0..<fileSize)
+        hashFileName = document?.displayName ?? String(localized: "Untitled")
+        hashTitle = String(localized: "Entire file")
+        showHashSheet = true
+    }
+
+    func openHashForSelection() {
+        guard let selection else { return }
+        let data = bytes(in: selection.start..<(selection.end + 1))
+        guard !data.isEmpty else { return }
+        hashInputBytes = data
+        hashFileName = document?.displayName ?? String(localized: "Untitled")
+        hashTitle = String(
+            localized: "Selection: 0x\(HexFormatter.offsetString(for: selection.start)) – 0x\(HexFormatter.offsetString(for: selection.end))"
+        )
+        showHashSheet = true
+    }
+
+    func openHashSheet() {
+        openHashForSelection()
     }
 
     func openBinarySheet() {

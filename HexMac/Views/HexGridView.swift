@@ -28,6 +28,7 @@ struct HexGridView: View {
     let onCopySelection: () -> Void
     let onClearSelection: () -> Void
     let onCalculateCRC: () -> Void
+    let onCalculateHash: () -> Void
     let onShowBinary: () -> Void
     let onScrollTargetHandled: () -> Void
 
@@ -75,6 +76,7 @@ struct HexGridView: View {
                                     onCopySelection: onCopySelection,
                                     onClearSelection: onClearSelection,
                                     onCalculateCRC: onCalculateCRC,
+                                    onCalculateHash: onCalculateHash,
                                     onShowBinary: onShowBinary,
                                     highlightColor: highlightColor
                                 )

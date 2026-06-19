@@ -187,6 +187,18 @@ struct HexMacApp: App {
 
             Divider()
 
+            Button(String(localized: "Hash (Entire File)…")) {
+                workspace.openHashForAll()
+            }
+            .disabled(!workspace.isDocumentOpen || workspace.fileSize == 0)
+
+            Button(String(localized: "Hash (Selection)…")) {
+                workspace.openHashForSelection()
+            }
+            .disabled(!workspace.hasSelection)
+
+            Divider()
+
             Button(String(localized: "Calculate CRC…")) {
                 workspace.openCRCSheet()
             }

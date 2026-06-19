@@ -49,6 +49,17 @@ struct WorkspaceView: View {
                 }
             }
         }
+        .sheet(isPresented: activePaneBinding(\.showHashSheet)) {
+            if let pane = workspace.activePane {
+                HashCalculatorView(
+                    fileName: pane.hashFileName,
+                    title: pane.hashTitle,
+                    inputBytes: pane.hashInputBytes
+                ) {
+                    pane.showHashSheet = false
+                }
+            }
+        }
         .confirmationDialog(
             String(localized: "Fill selection with"),
             isPresented: activePaneBinding(\.showFillDialog),
