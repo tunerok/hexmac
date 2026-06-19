@@ -75,3 +75,50 @@ struct HexHighlight: Identifiable, Equatable {
         start <= rangeEnd && end >= rangeStart
     }
 }
+
+enum HexHighlightSpans {
+    static func spans(
+        for row: Int,
+        bytesPerRow: Int,
+        fileSize: Int,
+        highlights: [HexHighlight]
+    ) -> [HexDiffSpan]? {
+        let rowOffset = HexFormatter.rowOffset(for: row, bytesPerRow: bytesPerRow)
+        let count = HexFormatter.byteCount(
+            forRow: row,
+            fileSize: fileSize,
+            bytesPerRow: bytesPerRow
+        )
+        guard count > 0 else { return nil }
+
+        let rowEnd = rowOffset + count - 1
+        var spans: [HexDiffSpan] = []
+
+        for highlight in highlights {
+            guard highlight.overlaps(rangeStart: rowOffset, rangeEnd: rowEnd) else { continue }
+
+            let intersectStart = max(highlight.start, rowOffset)
+            let intersectEnd = min(highlight.end, rowEnd)
+            let startColumn = intersectStart - rowOffset
+            let endColumn = intersectEnd - rowOffset
+
+            if let last = spans.last,
+               last.color == highlight.color,
+               last.endColumn == startColumn - 1 {
+                spans[spans.count - 1] = HexDiffSpan(
+                    startColumn: last.startColumn,
+                    endColumn: endColumn,
+                    color: highlight.color
+                )
+            } else {
+                spans.append(HexDiffSpan(
+                    startColumn: startColumn,
+                    endColumn: endColumn,
+                    color: highlight.color
+                ))
+            }
+        }
+
+        return spans.isEmpty ? nil : spans
+    }
+}

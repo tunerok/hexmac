@@ -250,6 +250,13 @@ final class DocumentPaneViewModel: Identifiable {
                 self.comparisonDiffMap = map
                 self.isDiffMapLoading = false
                 self.diffMapProgress = 1
+                Task {
+                    await self.loadComparisonRows(
+                        around: 0,
+                        radius: HexScrollWindow.prefetchMargin,
+                        cancelPrevious: false
+                    )
+                }
             }
         }
     }
@@ -387,12 +394,12 @@ final class DocumentPaneViewModel: Identifiable {
             return cached
         }
 
-        if let loaded = loadComparisonRowSynchronously(for: rowIndex) {
-            return loaded
-        }
-
         scheduleComparisonRowLoad(around: rowIndex)
         return emptyCompareRowContext(for: rowIndex)
+    }
+
+    func compareRowRevision(for rowIndex: Int) -> Int {
+        compareRowCache.revision(for: rowIndex)
     }
 
     func navigateComparison(to row: Int) {
@@ -448,7 +455,8 @@ final class DocumentPaneViewModel: Identifiable {
                 guard !Task.isCancelled,
                       cacheGeneration == self.compareRowCacheGeneration,
                       case .comparison = self.paneMode else { return }
-                self.compareRowCache.storeBatch(batch)
+                guard !batch.isEmpty else { return }
+                _ = self.compareRowCache.storeBatch(batch)
                 self.comparisonRowRevision &+= 1
             }
         }
@@ -460,13 +468,6 @@ final class DocumentPaneViewModel: Identifiable {
         }
     }
 
-    func preloadComparisonRows(for visibleRange: ClosedRange<Int>) {
-        let midpoint = (visibleRange.lowerBound + visibleRange.upperBound) / 2
-        Task {
-            await loadComparisonRows(around: midpoint, radius: 64, cancelPrevious: false)
-        }
-    }
-
     private func scheduleComparisonRowLoad(around row: Int) {
         Task {
             await loadComparisonRows(around: row, radius: 48, cancelPrevious: false)
@@ -474,18 +475,11 @@ final class DocumentPaneViewModel: Identifiable {
     }
 
     private func emptyCompareRowContext(for rowIndex: Int) -> CompareRowContext {
-        let bytesPerRowValue = bytesPerRow.rawValue
-        let count = HexFormatter.byteCount(
-            forRow: rowIndex,
-            fileSize: fileSize,
-            bytesPerRow: bytesPerRowValue
-        )
-        let emptyHighlights = Array<HighlightColor?>(repeating: nil, count: max(count, 0))
-        return CompareRowContext(
+        CompareRowContext(
             leftBytes: [],
             rightBytes: [],
-            leftHighlights: emptyHighlights,
-            rightHighlights: emptyHighlights
+            leftDiffSpans: nil,
+            rightDiffSpans: nil
         )
     }
 
@@ -967,20 +961,7 @@ final class DocumentPaneViewModel: Identifiable {
     }
 
     func ensureComparisonRowsLoadedSynchronously(for range: Range<Int>) {
-        guard case .comparison = paneMode, !range.isEmpty else { return }
-
-        var didLoad = false
-        for row in range {
-            guard row >= 0, row < rowCount else { continue }
-            if compareRowCache.context(for: row) == nil,
-               loadComparisonRowSynchronously(for: row) != nil {
-                didLoad = true
-            }
-        }
-
-        if didLoad {
-            comparisonRowRevision &+= 1
-        }
+        // Compare mode uses async prefetch only to keep scrolling off the main thread.
     }
 
     func prefetchDocumentRows(for range: Range<Int>) {
@@ -1309,23 +1290,6 @@ final class DocumentPaneViewModel: Identifiable {
         guard count > 0 else { return }
         let bytes = document.bytes(in: offset..<(offset + count))
         documentRowCache.patch(bytes, for: row)
-    }
-
-    private func loadComparisonRowSynchronously(for rowIndex: Int) -> CompareRowContext? {
-        guard case .comparison(let left, let right) = paneMode else { return nil }
-        let rowRange = rowIndex..<(rowIndex + 1)
-        let batch = CompareRowLoader.buildContexts(
-            for: rowRange,
-            bytesPerRow: bytesPerRow.rawValue,
-            fileSize: fileSize,
-            leftArray: left.byteArray,
-            rightArray: right.byteArray,
-            leftSize: left.fileSize,
-            rightSize: right.fileSize
-        )
-        guard let context = batch[rowIndex] else { return nil }
-        compareRowCache.store(context, for: rowIndex)
-        return context
     }
 
     private func loadRowBytesSynchronously(for rowIndex: Int) -> [UInt8] {

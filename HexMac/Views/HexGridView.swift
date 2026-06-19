@@ -19,6 +19,7 @@ struct HexGridView: View {
     let editingHexText: String
     let textEncoding: TextEncodingMode
     let isReadOnly: Bool
+    let highlights: [HexHighlight]
     let linkedScrollRow: Binding<Int?>?
     let onVisibleRowChanged: ((Int) -> Void)?
     let highlightColor: (Int) -> HighlightColor?
@@ -61,6 +62,7 @@ struct HexGridView: View {
         editingHexText: String,
         textEncoding: TextEncodingMode,
         isReadOnly: Bool = false,
+        highlights: [HexHighlight] = [],
         linkedScrollRow: Binding<Int?>? = nil,
         onVisibleRowChanged: ((Int) -> Void)? = nil,
         highlightColor: @escaping (Int) -> HighlightColor?,
@@ -95,6 +97,7 @@ struct HexGridView: View {
         self.editingHexText = editingHexText
         self.textEncoding = textEncoding
         self.isReadOnly = isReadOnly
+        self.highlights = highlights
         self.linkedScrollRow = linkedScrollRow
         self.onVisibleRowChanged = onVisibleRowChanged
         self.highlightColor = highlightColor
@@ -179,8 +182,15 @@ struct HexGridView: View {
                     editingOffset: editingOffset,
                     editingHexText: editingHexText,
                     textEncoding: textEncoding,
-                    highlightColor: highlightColor
+                    highlightColor: highlightColor,
+                    userHexSpans: HexHighlightSpans.spans(
+                        for: rowIndex,
+                        bytesPerRow: bytesPerRow,
+                        fileSize: fileSize,
+                        highlights: highlights
+                    )
                 )
+                .equatable()
                 .id(rowIdentity(for: rowIndex))
             },
             overlay: { firstVisibleRow in

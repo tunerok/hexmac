@@ -36,6 +36,16 @@ enum HexGridLayout {
         CGFloat(bytesPerRow) * textCharacterWidth
     }
 
+    static func hexCellOriginX(for column: Int) -> CGFloat {
+        CGFloat(column) * (cellWidth + cellSpacing)
+    }
+
+    static func hexSpanWidth(from startColumn: Int, to endColumn: Int) -> CGFloat {
+        let columnCount = endColumn - startColumn + 1
+        guard columnCount > 0 else { return 0 }
+        return CGFloat(columnCount) * cellWidth + CGFloat(columnCount - 1) * cellSpacing
+    }
+
     static func hexColumnStartX(contentPadding: CGFloat = contentPadding) -> CGFloat {
         contentPadding + offsetColumnWidth + hexColumnLeadingPadding
     }

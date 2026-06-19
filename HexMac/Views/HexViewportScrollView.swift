@@ -59,11 +59,8 @@ struct HexViewportScrollView<RowContent: View, Overlay: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .clipped()
-        .onChange(of: firstVisibleRow) { _, _ in
-            reportVisibleState(window: scrollWindow)
-        }
         .onAppear {
-            reportVisibleState(window: window)
+            reportVisibleState(window: scrollWindow)
         }
         .onChange(of: bytesPerRow) { oldValue, newValue in
             guard oldValue != newValue else { return }

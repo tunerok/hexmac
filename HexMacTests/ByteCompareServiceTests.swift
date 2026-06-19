@@ -243,33 +243,138 @@ final class ByteCompareServiceTests: XCTestCase {
         XCTAssertEqual(fromIndex, fullScan)
     }
 
-    func testRowHighlightsDetectsChangedDeletedAndAdded() {
+    func testDiffSpansDetectsChangedDeletedAndAdded() {
         let left: [UInt8] = [0x01, 0x02, 0x03]
         let right: [UInt8] = [0x01, 0xFF]
 
-        let leftHighlights = ByteCompareService.rowHighlights(
-            leftBytes: left,
-            rightBytes: right,
-            rowOffset: 0,
+        let index = ByteCompareService.buildDiffIndex(
             leftSize: left.count,
             rightSize: right.count,
-            side: .left
+            leftByte: { offset in left[offset] },
+            rightByte: { offset in right[offset] }
         )
-        let rightHighlights = ByteCompareService.rowHighlights(
-            leftBytes: left,
-            rightBytes: right,
-            rowOffset: 0,
+        let leftSpans = ByteCompareService.diffSpans(
+            from: index,
+            row: 0,
+            bytesPerRow: 16,
+            fileSize: 3,
+            side: .left
+        )!
+        let rightSpans = ByteCompareService.diffSpans(
+            from: index,
+            row: 0,
+            bytesPerRow: 16,
+            fileSize: 3,
+            side: .right
+        )!
+
+        XCTAssertEqual(leftSpans.count, 2)
+        XCTAssertEqual(leftSpans[0].startColumn, 1)
+        XCTAssertEqual(leftSpans[0].endColumn, 1)
+        XCTAssertEqual(leftSpans[0].color, .yellow)
+        XCTAssertEqual(leftSpans[1].startColumn, 2)
+        XCTAssertEqual(leftSpans[1].endColumn, 2)
+        XCTAssertEqual(leftSpans[1].color, .red)
+
+        XCTAssertEqual(rightSpans.count, 1)
+        XCTAssertEqual(rightSpans[0].startColumn, 1)
+        XCTAssertEqual(rightSpans[0].endColumn, 1)
+        XCTAssertEqual(rightSpans[0].color, .yellow)
+    }
+
+    func testDiffSpansMergesAdjacentColumnsWithSameColor() {
+        let left: [UInt8] = [0x01, 0x02, 0x03, 0x04]
+        let right: [UInt8] = [0x01, 0xA0, 0xA1, 0x04]
+
+        let index = ByteCompareService.buildDiffIndex(
             leftSize: left.count,
             rightSize: right.count,
-            side: .right
+            leftByte: { offset in left[offset] },
+            rightByte: { offset in right[offset] }
+        )
+        let spans = ByteCompareService.diffSpans(
+            from: index,
+            row: 0,
+            bytesPerRow: 16,
+            fileSize: 4,
+            side: .left
+        )!
+
+        XCTAssertEqual(spans.count, 1)
+        XCTAssertEqual(spans[0].startColumn, 1)
+        XCTAssertEqual(spans[0].endColumn, 2)
+        XCTAssertEqual(spans[0].color, .yellow)
+    }
+
+    func testLocalDiffSpansMatchIndexSpans() {
+        let left: [UInt8] = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                             0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+                             0x11, 0x12]
+        let right: [UInt8] = [0x01, 0xFF, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                              0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+                              0xAA]
+
+        let index = ByteCompareService.buildDiffIndex(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftByte: { offset in left[offset] },
+            rightByte: { offset in right[offset] }
         )
 
-        XCTAssertNil(leftHighlights[0])
-        XCTAssertEqual(leftHighlights[1], .yellow)
-        XCTAssertEqual(leftHighlights[2], .red)
-        XCTAssertNil(rightHighlights[0])
-        XCTAssertEqual(rightHighlights[1], .yellow)
-        XCTAssertNil(rightHighlights[2])
+        let bytesPerRow = 16
+        let fileSize = max(left.count, right.count)
+        let rowCount = (fileSize + bytesPerRow - 1) / bytesPerRow
+
+        for row in 0..<rowCount {
+            let rowOffset = HexFormatter.rowOffset(for: row, bytesPerRow: bytesPerRow)
+            let count = HexFormatter.byteCount(
+                forRow: row,
+                fileSize: fileSize,
+                bytesPerRow: bytesPerRow
+            )
+            let leftBytes = Array(left[rowOffset..<min(rowOffset + count, left.count)])
+            let rightBytes = Array(right[rowOffset..<min(rowOffset + count, right.count)])
+
+            for side: CompareSide in [.left, .right] {
+                let fromIndex = ByteCompareService.diffSpans(
+                    from: index,
+                    row: row,
+                    bytesPerRow: bytesPerRow,
+                    fileSize: fileSize,
+                    side: side
+                )
+                let local = ByteCompareService.diffSpans(
+                    leftBytes: leftBytes,
+                    rightBytes: rightBytes,
+                    rowOffset: rowOffset,
+                    leftSize: left.count,
+                    rightSize: right.count,
+                    side: side
+                )
+                XCTAssertEqual(local, fromIndex, "row \(row) side \(side)")
+            }
+        }
+    }
+
+    func testBuildDiffRegionsIncrementalMatchesFullIndex() {
+        let left: [UInt8] = [0x01, 0x02, 0x03, 0x04, 0x05]
+        let right: [UInt8] = [0x01, 0xFF, 0xFE, 0x04, 0x06]
+
+        let index = ByteCompareService.buildDiffIndex(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftByte: { offset in left[offset] },
+            rightByte: { offset in right[offset] }
+        )
+
+        let regions = ByteCompareService.buildDiffRegionsIncremental(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) }
+        )
+
+        XCTAssertEqual(regions, index.regions)
     }
 
     func testBuildDiffMapIncrementalMatchesFullMapOnSmallFiles() {

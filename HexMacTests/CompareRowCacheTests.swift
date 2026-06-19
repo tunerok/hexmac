@@ -32,8 +32,8 @@ final class CompareRowCacheTests: XCTestCase {
         let context = CompareRowContext(
             leftBytes: [0x01],
             rightBytes: [0x02],
-            leftHighlights: [nil],
-            rightHighlights: [nil]
+            leftDiffSpans: nil,
+            rightDiffSpans: nil
         )
 
         for row in 0..<(CompareRowCache.maxRows + 4) {

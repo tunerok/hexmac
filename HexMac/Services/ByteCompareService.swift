@@ -45,6 +45,12 @@ struct DiffRegion: Equatable {
     let rightKind: DiffRegionKind
 }
 
+struct HexDiffSpan: Equatable {
+    let startColumn: Int
+    let endColumn: Int
+    let color: HighlightColor
+}
+
 struct CompareDiffIndex: Equatable {
     let totalBytes: Int
     let regions: [DiffRegion]
@@ -88,8 +94,8 @@ struct CompareDiffIndex: Equatable {
 struct CompareRowContext {
     let leftBytes: [UInt8]
     let rightBytes: [UInt8]
-    let leftHighlights: [HighlightColor?]
-    let rightHighlights: [HighlightColor?]
+    let leftDiffSpans: [HexDiffSpan]?
+    let rightDiffSpans: [HexDiffSpan]?
 }
 
 enum ByteCompareService {
@@ -127,30 +133,106 @@ enum ByteCompareService {
         return highlightColor(for: kind)
     }
 
-    nonisolated static func rowHighlights(
+    nonisolated static func diffSpans(
+        from index: CompareDiffIndex,
+        row: Int,
+        bytesPerRow: Int,
+        fileSize: Int,
+        side: CompareSide
+    ) -> [HexDiffSpan]? {
+        let rowOffset = HexFormatter.rowOffset(for: row, bytesPerRow: bytesPerRow)
+        let count = HexFormatter.byteCount(
+            forRow: row,
+            fileSize: fileSize,
+            bytesPerRow: bytesPerRow
+        )
+        guard count > 0 else { return nil }
+        return diffSpans(
+            from: index,
+            rowOffsetRange: rowOffset..<(rowOffset + count),
+            side: side
+        )
+    }
+
+    nonisolated static func diffSpans(
+        from index: CompareDiffIndex,
+        rowOffsetRange: Range<Int>,
+        side: CompareSide
+    ) -> [HexDiffSpan]? {
+        guard rowOffsetRange.lowerBound < rowOffsetRange.upperBound else { return nil }
+
+        let rowStart = rowOffsetRange.lowerBound
+        var spans: [HexDiffSpan] = []
+
+        for region in index.regions {
+            guard region.end >= rowOffsetRange.lowerBound else { continue }
+            guard region.start < rowOffsetRange.upperBound else { break }
+
+            let intersectStart = max(region.start, rowOffsetRange.lowerBound)
+            let intersectEnd = min(region.end, rowOffsetRange.upperBound - 1)
+            guard intersectStart <= intersectEnd else { continue }
+
+            let kind = side == .left ? region.leftKind : region.rightKind
+            guard kind != .equal, let color = highlightColor(for: kind) else { continue }
+
+            let startColumn = intersectStart - rowStart
+            let endColumn = intersectEnd - rowStart
+
+            if let last = spans.last, last.color == color, last.endColumn == startColumn - 1 {
+                spans[spans.count - 1] = HexDiffSpan(
+                    startColumn: last.startColumn,
+                    endColumn: endColumn,
+                    color: color
+                )
+            } else {
+                spans.append(HexDiffSpan(
+                    startColumn: startColumn,
+                    endColumn: endColumn,
+                    color: color
+                ))
+            }
+        }
+
+        return spans.isEmpty ? nil : spans
+    }
+
+    nonisolated static func diffSpans(
         leftBytes: [UInt8],
         rightBytes: [UInt8],
         rowOffset: Int,
         leftSize: Int,
         rightSize: Int,
         side: CompareSide
-    ) -> [HighlightColor?] {
+    ) -> [HexDiffSpan]? {
         let count = max(leftBytes.count, rightBytes.count)
-        guard count > 0 else { return [] }
+        guard count > 0 else { return nil }
 
-        return (0..<count).map { index in
+        var spans: [HexDiffSpan] = []
+
+        for index in 0..<count {
             let offset = rowOffset + index
             let leftByte: UInt8? = offset < leftSize && index < leftBytes.count ? leftBytes[index] : nil
             let rightByte: UInt8? = offset < rightSize && index < rightBytes.count ? rightBytes[index] : nil
-            return highlightColor(
-                at: offset,
-                side: side,
-                leftSize: leftSize,
-                rightSize: rightSize,
-                leftByte: leftByte,
-                rightByte: rightByte
-            )
+            let kinds = diffKinds(leftByte: leftByte, rightByte: rightByte)
+            let kind = side == .left ? kinds.left : kinds.right
+            guard kind != .equal, let color = highlightColor(for: kind) else { continue }
+
+            if let last = spans.last, last.color == color, last.endColumn == index - 1 {
+                spans[spans.count - 1] = HexDiffSpan(
+                    startColumn: last.startColumn,
+                    endColumn: index,
+                    color: color
+                )
+            } else {
+                spans.append(HexDiffSpan(
+                    startColumn: index,
+                    endColumn: index,
+                    color: color
+                ))
+            }
         }
+
+        return spans.isEmpty ? nil : spans
     }
 
     nonisolated static func samplingStride(for totalBytes: Int, bucketCount: Int) -> Int {
@@ -443,6 +525,93 @@ enum ByteCompareService {
         )
     }
 
+    nonisolated static func buildDiffRegionsIncremental(
+        leftSize: Int,
+        rightSize: Int,
+        leftBytes: (Range<Int>) -> [UInt8],
+        rightBytes: (Range<Int>) -> [UInt8],
+        chunkSize: Int = ChunkedByteReader.defaultChunkSize,
+        onChunk: (([DiffRegion], Double) -> Void)? = nil
+    ) -> [DiffRegion] {
+        let total = max(leftSize, rightSize)
+        guard total > 0 else {
+            onChunk?([], 1)
+            return []
+        }
+
+        var regions: [DiffRegion] = []
+        regions.reserveCapacity(min(total / 64, 4096))
+        var cursor = 0
+
+        while cursor < total {
+            let chunkEnd = min(total, cursor + chunkSize)
+            let leftRange = clampedRange(from: cursor, to: min(leftSize, chunkEnd))
+            let rightRange = clampedRange(from: cursor, to: min(rightSize, chunkEnd))
+            let leftChunk = leftRange.isEmpty ? [] : leftBytes(leftRange)
+            let rightChunk = rightRange.isEmpty ? [] : rightBytes(rightRange)
+
+            appendDiffRegions(
+                from: cursor,
+                to: chunkEnd,
+                leftSize: leftSize,
+                rightSize: rightSize,
+                leftChunk: leftChunk,
+                rightChunk: rightChunk,
+                leftChunkStart: leftRange.lowerBound,
+                rightChunkStart: rightRange.lowerBound,
+                regions: &regions
+            )
+
+            cursor = chunkEnd
+            onChunk?(regions, Double(cursor) / Double(total))
+        }
+
+        return regions
+    }
+
+    nonisolated static func buildDiffIndexIncremental(
+        leftSize: Int,
+        rightSize: Int,
+        leftBytes: (Range<Int>) -> [UInt8],
+        rightBytes: (Range<Int>) -> [UInt8],
+        bucketCount: Int = defaultBucketCount,
+        chunkSize: Int = ChunkedByteReader.defaultChunkSize,
+        onChunk: ((CompareDiffIndex, Double) -> Void)? = nil
+    ) -> CompareDiffIndex {
+        let total = max(leftSize, rightSize)
+
+        let map = buildDiffMapIncremental(
+            leftSize: leftSize,
+            rightSize: rightSize,
+            leftBytes: leftBytes,
+            rightBytes: rightBytes,
+            bucketCount: bucketCount,
+            chunkSize: chunkSize
+        ) { partialMap, progress in
+            let index = CompareDiffIndex(
+                totalBytes: total,
+                regions: [],
+                map: partialMap
+            )
+            onChunk?(index, progress * 0.2)
+        }
+
+        let regions = buildDiffRegionsIncremental(
+            leftSize: leftSize,
+            rightSize: rightSize,
+            leftBytes: leftBytes,
+            rightBytes: rightBytes,
+            chunkSize: chunkSize
+        ) { partialRegions, progress in
+            let index = CompareDiffIndex(totalBytes: total, regions: partialRegions, map: map)
+            onChunk?(index, 0.2 + progress * 0.8)
+        }
+
+        let index = CompareDiffIndex(totalBytes: total, regions: regions, map: map)
+        onChunk?(index, 1)
+        return index
+    }
+
     nonisolated static func formatTextReport(
         entries: [DiffEntry],
         leftName: String,
@@ -580,6 +749,144 @@ enum ByteCompareService {
         let local = offset - chunkStart
         guard local >= 0, local < chunk.count else { return nil }
         return chunk[local]
+    }
+
+    nonisolated private static func appendDiffRegions(
+        from rangeStart: Int,
+        to rangeEnd: Int,
+        leftSize: Int,
+        rightSize: Int,
+        leftChunk: [UInt8],
+        rightChunk: [UInt8],
+        leftChunkStart: Int,
+        rightChunkStart: Int,
+        regions: inout [DiffRegion]
+    ) {
+        guard rangeStart < rangeEnd else { return }
+
+        var offset = rangeStart
+        while offset < rangeEnd {
+            let leftByte = byteInChunk(
+                at: offset,
+                fileSize: leftSize,
+                chunkStart: leftChunkStart,
+                chunk: leftChunk
+            )
+            let rightByte = byteInChunk(
+                at: offset,
+                fileSize: rightSize,
+                chunkStart: rightChunkStart,
+                chunk: rightChunk
+            )
+            let kinds = diffKinds(leftByte: leftByte, rightByte: rightByte)
+
+            if kinds.left == .equal, kinds.right == .equal {
+                if offset < leftSize, offset < rightSize {
+                    let leftLocal = offset - leftChunkStart
+                    let rightLocal = offset - rightChunkStart
+                    let overlapEnd = min(rangeEnd, leftSize, rightSize)
+                    let remaining = overlapEnd - offset
+
+                    if leftLocal >= 0, rightLocal >= 0,
+                       leftLocal < leftChunk.count, rightLocal < rightChunk.count,
+                       remaining > 1 {
+                        let available = min(
+                            remaining,
+                            leftChunk.count - leftLocal,
+                            rightChunk.count - rightLocal
+                        )
+                        let equalLength = equalPrefixLength(
+                            leftChunk: leftChunk,
+                            leftStart: leftLocal,
+                            rightChunk: rightChunk,
+                            rightStart: rightLocal,
+                            count: available
+                        )
+                        if equalLength > 0 {
+                            offset += equalLength
+                            continue
+                        }
+                    }
+                }
+
+                offset += 1
+                continue
+            }
+
+            var end = offset
+            while end + 1 < rangeEnd {
+                let nextLeft = byteInChunk(
+                    at: end + 1,
+                    fileSize: leftSize,
+                    chunkStart: leftChunkStart,
+                    chunk: leftChunk
+                )
+                let nextRight = byteInChunk(
+                    at: end + 1,
+                    fileSize: rightSize,
+                    chunkStart: rightChunkStart,
+                    chunk: rightChunk
+                )
+                let nextKinds = diffKinds(leftByte: nextLeft, rightByte: nextRight)
+                if nextKinds.left != kinds.left || nextKinds.right != kinds.right {
+                    break
+                }
+                end += 1
+            }
+
+            mergeDiffRegion(
+                start: offset,
+                end: end,
+                leftKind: kinds.left,
+                rightKind: kinds.right,
+                into: &regions
+            )
+            offset = end + 1
+        }
+    }
+
+    nonisolated private static func equalPrefixLength(
+        leftChunk: [UInt8],
+        leftStart: Int,
+        rightChunk: [UInt8],
+        rightStart: Int,
+        count: Int
+    ) -> Int {
+        guard count > 0 else { return 0 }
+
+        var matched = 0
+        while matched < count,
+              leftChunk[leftStart + matched] == rightChunk[rightStart + matched] {
+            matched += 1
+        }
+        return matched
+    }
+
+    nonisolated private static func mergeDiffRegion(
+        start: Int,
+        end: Int,
+        leftKind: DiffRegionKind,
+        rightKind: DiffRegionKind,
+        into regions: inout [DiffRegion]
+    ) {
+        if let last = regions.last,
+           last.end == start - 1,
+           last.leftKind == leftKind,
+           last.rightKind == rightKind {
+            regions[regions.count - 1] = DiffRegion(
+                start: last.start,
+                end: end,
+                leftKind: leftKind,
+                rightKind: rightKind
+            )
+        } else {
+            regions.append(DiffRegion(
+                start: start,
+                end: end,
+                leftKind: leftKind,
+                rightKind: rightKind
+            ))
+        }
     }
 
     nonisolated private static func bucketIndex(for offset: Int, total: Int, bucketCount: Int) -> Int {

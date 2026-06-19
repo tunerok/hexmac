@@ -6,18 +6,24 @@
 import Foundation
 
 struct CompareRowCache {
-    static let maxRows = 256
+    static let maxRows = 512
 
     private var rows: [Int: CompareRowContext] = [:]
     private var order: [Int] = []
+    private var revisions: [Int: Int] = [:]
 
     mutating func invalidate() {
         rows.removeAll(keepingCapacity: false)
         order.removeAll(keepingCapacity: false)
+        revisions.removeAll(keepingCapacity: false)
     }
 
     func context(for row: Int) -> CompareRowContext? {
         rows[row]
+    }
+
+    func revision(for row: Int) -> Int {
+        revisions[row] ?? 0
     }
 
     mutating func store(_ context: CompareRowContext, for row: Int) {
@@ -26,16 +32,22 @@ struct CompareRowCache {
         } else if order.count >= Self.maxRows, let evicted = order.first {
             order.removeFirst()
             rows.removeValue(forKey: evicted)
+            revisions.removeValue(forKey: evicted)
         }
         rows[row] = context
         order.append(row)
+        revisions[row, default: 0] &+= 1
     }
 
-    mutating func storeBatch(_ batch: [Int: CompareRowContext]) {
+    mutating func storeBatch(_ batch: [Int: CompareRowContext]) -> [Int] {
+        var updatedRows: [Int] = []
+        updatedRows.reserveCapacity(batch.count)
         for row in batch.keys.sorted() {
             guard let context = batch[row] else { continue }
             store(context, for: row)
+            updatedRows.append(row)
         }
+        return updatedRows
     }
 }
 
@@ -72,29 +84,32 @@ enum CompareRowLoader {
         for row in rows {
             let leftBytes = leftBatch[row] ?? []
             let rightBytes = rightBatch[row] ?? []
-            let offset = HexFormatter.rowOffset(for: row, bytesPerRow: bytesPerRow)
             let count = max(leftBytes.count, rightBytes.count)
             guard count > 0 else { continue }
+
+            let rowOffset = HexFormatter.rowOffset(for: row, bytesPerRow: bytesPerRow)
+            let leftDiffSpans = ByteCompareService.diffSpans(
+                leftBytes: leftBytes,
+                rightBytes: rightBytes,
+                rowOffset: rowOffset,
+                leftSize: leftSize,
+                rightSize: rightSize,
+                side: .left
+            )
+            let rightDiffSpans = ByteCompareService.diffSpans(
+                leftBytes: leftBytes,
+                rightBytes: rightBytes,
+                rowOffset: rowOffset,
+                leftSize: leftSize,
+                rightSize: rightSize,
+                side: .right
+            )
 
             result[row] = CompareRowContext(
                 leftBytes: leftBytes,
                 rightBytes: rightBytes,
-                leftHighlights: ByteCompareService.rowHighlights(
-                    leftBytes: leftBytes,
-                    rightBytes: rightBytes,
-                    rowOffset: offset,
-                    leftSize: leftSize,
-                    rightSize: rightSize,
-                    side: .left
-                ),
-                rightHighlights: ByteCompareService.rowHighlights(
-                    leftBytes: leftBytes,
-                    rightBytes: rightBytes,
-                    rowOffset: offset,
-                    leftSize: leftSize,
-                    rightSize: rightSize,
-                    side: .right
-                )
+                leftDiffSpans: leftDiffSpans,
+                rightDiffSpans: rightDiffSpans
             )
         }
 

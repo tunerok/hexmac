@@ -15,7 +15,8 @@ struct HexRowView: View, Equatable {
     let editingHexText: String
     let textEncoding: TextEncodingMode
     let highlightColor: (Int) -> HighlightColor?
-    let columnHighlights: [HighlightColor?]?
+    let userHexSpans: [HexDiffSpan]?
+    let diffHexSpans: [HexDiffSpan]?
 
     init(
         rowIndex: Int,
@@ -27,7 +28,8 @@ struct HexRowView: View, Equatable {
         editingHexText: String,
         textEncoding: TextEncodingMode,
         highlightColor: @escaping (Int) -> HighlightColor?,
-        columnHighlights: [HighlightColor?]? = nil
+        userHexSpans: [HexDiffSpan]? = nil,
+        diffHexSpans: [HexDiffSpan]? = nil
     ) {
         self.rowIndex = rowIndex
         self.bytes = bytes
@@ -38,7 +40,8 @@ struct HexRowView: View, Equatable {
         self.editingHexText = editingHexText
         self.textEncoding = textEncoding
         self.highlightColor = highlightColor
-        self.columnHighlights = columnHighlights
+        self.userHexSpans = userHexSpans
+        self.diffHexSpans = diffHexSpans
     }
 
     static func == (lhs: HexRowView, rhs: HexRowView) -> Bool {
@@ -50,7 +53,8 @@ struct HexRowView: View, Equatable {
             && lhs.editingOffset == rhs.editingOffset
             && lhs.editingHexText == rhs.editingHexText
             && lhs.textEncoding == rhs.textEncoding
-            && lhs.columnHighlights == rhs.columnHighlights
+            && lhs.userHexSpans == rhs.userHexSpans
+            && lhs.diffHexSpans == rhs.diffHexSpans
     }
 
     private var rowOffset: Int {
@@ -62,26 +66,28 @@ struct HexRowView: View, Equatable {
     }
 
     private var usesDetailedCells: Bool {
-        if columnHighlights != nil { return true }
         if let editingOffset, editingOffset >= rowOffset, editingOffset <= rowEndOffset {
             return true
         }
         if let selection, selection.end >= rowOffset, selection.start <= rowEndOffset {
             return true
         }
-        for column in 0..<bytes.count {
-            if highlightColor(rowOffset + column) != nil {
-                return true
-            }
-        }
         return false
     }
 
+    private var hexCanvasSpans: [HexDiffSpan]? {
+        let merged = (userHexSpans ?? []) + (diffHexSpans ?? [])
+        return merged.isEmpty ? nil : merged
+    }
+
+    private var showHexHighlightCanvas: Bool {
+        guard !usesDetailedCells else { return false }
+        guard let hexCanvasSpans, !hexCanvasSpans.isEmpty else { return false }
+        return true
+    }
+
     private func highlightForColumn(_ column: Int, offset: Int) -> HighlightColor? {
-        if let columnHighlights, column < columnHighlights.count {
-            return columnHighlights[column]
-        }
-        return highlightColor(offset)
+        highlightColor(offset)
     }
 
     var body: some View {
@@ -94,7 +100,7 @@ struct HexRowView: View, Equatable {
             if usesDetailedCells {
                 detailedHexColumn
             } else {
-                compactHexColumn
+                compactHexColumnWithHighlightOverlay
             }
 
             Divider()
@@ -109,11 +115,20 @@ struct HexRowView: View, Equatable {
         .frame(height: HexGridLayout.rowHeight, alignment: .leading)
     }
 
+    private var compactHexColumnWithHighlightOverlay: some View {
+        ZStack(alignment: .leading) {
+            compactHexColumn
+            if showHexHighlightCanvas, let hexCanvasSpans {
+                HexHighlightCanvasOverlay(spans: hexCanvasSpans, bytesPerRow: bytesPerRow)
+            }
+        }
+        .padding(.leading, HexGridLayout.hexColumnLeadingPadding)
+    }
+
     private var compactHexColumn: some View {
         Text(compactHexLine)
             .font(.body.monospaced())
             .frame(width: HexFormatter.hexColumnWidth(for: bytesPerRow), alignment: .leading)
-            .padding(.leading, HexGridLayout.hexColumnLeadingPadding)
     }
 
     private var compactTextColumn: some View {
@@ -155,7 +170,7 @@ struct HexRowView: View, Equatable {
                     TextCharacterCellView(
                         character: textCharacters[column],
                         isSelected: selection?.contains(offset) ?? false,
-                        highlightColor: highlightForColumn(column, offset: offset)
+                        highlightColor: nil
                     )
                 } else if column < bytesPerRow {
                     Text(" ")

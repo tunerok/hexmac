@@ -13,6 +13,8 @@ struct CompareHexGridView: View {
     let onActivate: () -> Void
 
     @State private var firstVisibleRow = 0
+    @State private var minimapRowRange: ClosedRange<Int> = 0...0
+    @State private var minimapRangeDebounceTask: Task<Void, Never>?
 
     private var scrollTargetRow: Int? {
         guard let target = pane.scrollTargetOffset, pane.bytesPerRow.rawValue > 0 else { return nil }
@@ -42,9 +44,7 @@ struct CompareHexGridView: View {
                             linkedScrollRow: nil,
                             onVisibleRowChanged: nil,
                             onVisibleRowRangeChanged: { range in
-                                guard range != visibleRowRange else { return }
-                                visibleRowRange = range
-                                pane.preloadComparisonRows(for: range)
+                                scheduleMinimapRangeUpdate(range)
                             },
                             onPrefetchRange: { range in
                                 guard !range.isEmpty else { return }
@@ -57,9 +57,7 @@ struct CompareHexGridView: View {
                                     )
                                 }
                             },
-                            onEnsureVisibleRowsLoaded: { range in
-                                pane.ensureComparisonRowsLoadedSynchronously(for: range)
-                            },
+                            onEnsureVisibleRowsLoaded: nil,
                             onScrollTargetHandled: {
                                 pane.clearScrollTarget()
                             },
@@ -91,6 +89,15 @@ struct CompareHexGridView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear {
+            minimapRowRange = visibleRowRange
+        }
+        .onDisappear {
+            minimapRangeDebounceTask?.cancel()
+        }
+        .onChange(of: minimapRowRange) { _, newValue in
+            visibleRowRange = newValue
+        }
     }
 
     private var pairedHeaders: some View {
@@ -115,8 +122,9 @@ struct CompareHexGridView: View {
                 editingHexText: "",
                 textEncoding: pane.textEncoding,
                 highlightColor: { _ in nil },
-                columnHighlights: context.leftHighlights
+                diffHexSpans: context.leftDiffSpans
             )
+            .equatable()
 
             panelSeparator
 
@@ -130,10 +138,22 @@ struct CompareHexGridView: View {
                 editingHexText: "",
                 textEncoding: pane.textEncoding,
                 highlightColor: { _ in nil },
-                columnHighlights: context.rightHighlights
+                diffHexSpans: context.rightDiffSpans
             )
+            .equatable()
         }
-        .id("\(rowIndex)-\(pane.comparisonRowRevision)")
+        .id("\(rowIndex)-\(pane.compareRowRevision(for: rowIndex))")
+    }
+
+    private func scheduleMinimapRangeUpdate(_ range: ClosedRange<Int>) {
+        minimapRangeDebounceTask?.cancel()
+        minimapRangeDebounceTask = Task {
+            try? await Task.sleep(for: .milliseconds(75))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                minimapRowRange = range
+            }
+        }
     }
 
     private func selectionOverlay(firstVisibleRow: Int) -> some View {

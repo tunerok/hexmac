@@ -43,6 +43,7 @@ struct DocumentPaneView: View {
             scrollTargetOffset: pane.scrollTargetOffset,
             editingHexText: pane.editingHexText,
             textEncoding: pane.textEncoding,
+            highlights: pane.highlights,
             highlightColor: { pane.highlight(at: $0) },
             rowBytes: { pane.rowBytes(for: $0) },
             onPrefetchRows: { range in
