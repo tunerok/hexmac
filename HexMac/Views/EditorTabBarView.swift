@@ -69,6 +69,32 @@ struct EditorTabBarView: View {
         .onTapGesture {
             workspace.activatePane(id: pane.id)
         }
+        .contextMenu {
+            Button(String(localized: "Split Right")) {
+                workspace.splitPane(id: pane.id, axis: .horizontal)
+            }
+            .disabled(!pane.isDocumentOpen)
+
+            Button(String(localized: "Split Down")) {
+                workspace.splitPane(id: pane.id, axis: .vertical)
+            }
+            .disabled(!pane.isDocumentOpen)
+
+            Divider()
+
+            Button(String(localized: "Close Tab")) {
+                workspace.requestClosePane(id: pane.id)
+            }
+
+            Button(String(localized: "Close Other Tabs")) {
+                workspace.requestCloseOtherTabs(inGroup: group.id, except: pane.id)
+            }
+            .disabled(group.panes.count <= 1)
+
+            Button(String(localized: "Close All Tabs")) {
+                workspace.requestCloseAllTabs(inGroup: group.id)
+            }
+        }
         .draggable(pane.id.uuidString)
     }
 }

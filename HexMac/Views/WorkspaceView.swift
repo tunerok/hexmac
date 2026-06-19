@@ -89,6 +89,23 @@ struct WorkspaceView: View {
             }
         }
         .confirmationDialog(
+            String(localized: "Close tabs?"),
+            isPresented: $workspace.showClosePanesConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Save All")) {
+                workspace.confirmClosePanes(save: true)
+            }
+            Button(String(localized: "Don't Save"), role: .destructive) {
+                workspace.confirmClosePanes(save: false)
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {
+                workspace.cancelClosePanes()
+            }
+        } message: {
+            Text("Unsaved changes will be lost.")
+        }
+        .confirmationDialog(
             String(localized: "Close editor group?"),
             isPresented: $workspace.showCloseGroupConfirmation,
             titleVisibility: .visible

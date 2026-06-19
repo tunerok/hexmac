@@ -17,6 +17,10 @@ final class WorkspaceViewModel {
     var pendingClosePaneID: UUID?
     var showClosePaneConfirmation = false
 
+    var pendingClosePaneIDs: [UUID] = []
+    var pendingClosePaneGroupID: UUID?
+    var showClosePanesConfirmation = false
+
     var pendingCloseGroupID: UUID?
     var showCloseGroupConfirmation = false
 
@@ -170,6 +174,54 @@ final class WorkspaceViewModel {
         showClosePaneConfirmation = false
     }
 
+    func requestCloseAllTabs(inGroup groupID: UUID) {
+        let paneIDs = panesInGroup(id: groupID).map(\.id)
+        requestClosePanes(paneIDs, inGroup: groupID)
+    }
+
+    func requestCloseOtherTabs(inGroup groupID: UUID, except paneID: UUID) {
+        activatePane(id: paneID)
+        let paneIDs = panesInGroup(id: groupID).filter { $0.id != paneID }.map(\.id)
+        requestClosePanes(paneIDs, inGroup: groupID)
+    }
+
+    func confirmClosePanes(save: Bool) {
+        let paneIDs = pendingClosePaneIDs
+        let groupID = pendingClosePaneGroupID
+        defer {
+            pendingClosePaneIDs = []
+            pendingClosePaneGroupID = nil
+            showClosePanesConfirmation = false
+        }
+        guard let groupID, !paneIDs.isEmpty else { return }
+        if save {
+            for id in paneIDs {
+                findPane(id: id)?.save()
+            }
+        }
+        removePanes(ids: paneIDs, fromGroup: groupID)
+    }
+
+    func cancelClosePanes() {
+        pendingClosePaneIDs = []
+        pendingClosePaneGroupID = nil
+        showClosePanesConfirmation = false
+    }
+
+    private func requestClosePanes(_ paneIDs: [UUID], inGroup groupID: UUID) {
+        guard !paneIDs.isEmpty else { return }
+        let panes = paneIDs.compactMap { findPane(id: $0) }
+        guard !panes.isEmpty else { return }
+
+        if panes.contains(where: \.isDirty) {
+            pendingClosePaneIDs = paneIDs
+            pendingClosePaneGroupID = groupID
+            showClosePanesConfirmation = true
+            return
+        }
+        removePanes(ids: paneIDs, fromGroup: groupID)
+    }
+
     func closeActiveGroup() {
         guard let paneID = activePaneID,
               let groupID = activeGroupID ?? findGroupID(containing: paneID) else { return }
@@ -219,6 +271,37 @@ final class WorkspaceViewModel {
         }
 
         pane.close()
+
+        rootGroup = collapse(node: rootGroup)
+
+        if let nextActivePaneID, findPane(id: nextActivePaneID) != nil {
+            activatePane(id: nextActivePaneID)
+        } else if let first = allPanes().first {
+            activatePane(id: first.id)
+        } else {
+            activePaneID = nil
+            activeGroupID = nil
+        }
+    }
+
+    private func removePanes(ids: [UUID], fromGroup groupID: UUID) {
+        let idsToRemove = Set(ids)
+        guard !idsToRemove.isEmpty else { return }
+
+        for id in idsToRemove {
+            findPane(id: id)?.close()
+        }
+
+        var nextActivePaneID: UUID?
+        updateLeaf(id: groupID) { group in
+            if let activePaneID = group.activePaneID, !idsToRemove.contains(activePaneID) {
+                nextActivePaneID = activePaneID
+            } else {
+                nextActivePaneID = group.panes.first { !idsToRemove.contains($0.id) }?.id
+            }
+            group.panes.removeAll { idsToRemove.contains($0.id) }
+            group.activePaneID = nextActivePaneID
+        }
 
         rootGroup = collapse(node: rootGroup)
 
@@ -327,6 +410,11 @@ final class WorkspaceViewModel {
         }
 
         activeGroupID = groupID
+    }
+
+    func splitPane(id: UUID, axis: SplitAxis) {
+        activatePane(id: id)
+        splitActive(axis: axis)
     }
 
     // MARK: - Active pane delegation
