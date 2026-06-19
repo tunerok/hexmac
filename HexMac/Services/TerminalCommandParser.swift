@@ -132,10 +132,10 @@ enum TerminalCommandParser {
         }
 
         let bytes = bytesProvider(range)
-        let configuration = CRCPreset.crc32ISO.configuration
+        let configuration = CRCPreset.crc32IsoHdlc.configuration
         let value = CRCService.calculate(data: bytes, configuration: configuration)
         let formatted = CRCService.formattedResult(value, configuration: configuration)
-        return .output("\(CRCPreset.crc32ISO.label): \(formatted)")
+        return .output("\(CRCPreset.crc32IsoHdlc.label): \(formatted)")
     }
 
     private static func parseRange(parts: [String], fileSize: Int) -> Range<Int>? {

@@ -11,10 +11,11 @@ struct CRCCalculatorView: View {
     let onClose: () -> Void
 
     @State private var configuration = CRCConfiguration.defaultConfiguration
-    @State private var selectedPreset: CRCPreset = .crc32ISO
+    @State private var selectedPreset: CRCPreset = .crc32IsoHdlc
     @State private var polynomialHex: String
     @State private var initialValueHex: String
     @State private var xorOutHex: String
+    @State private var reverseByteOrder = false
     @State private var calculatedResult: String?
 
     init(inputBytes: [UInt8], onClose: @escaping () -> Void) {
@@ -40,6 +41,14 @@ struct CRCCalculatorView: View {
             .foregroundStyle(.secondary)
 
             Form {
+                Toggle(
+                    String(localized: "Reverse byte order"),
+                    isOn: $reverseByteOrder
+                )
+                .onChange(of: reverseByteOrder) { _, _ in
+                    calculatedResult = nil
+                }
+
                 Picker(String(localized: "Preset"), selection: $selectedPreset) {
                     ForEach(CRCPreset.allCases) { preset in
                         Text(preset.label).tag(preset)
@@ -121,7 +130,8 @@ struct CRCCalculatorView: View {
         updatedConfiguration.setXorOut(fromHex: xorOutHex)
         configuration = updatedConfiguration
 
-        let value = CRCService.calculate(data: inputBytes, configuration: configuration)
+        let data = reverseByteOrder ? Array(inputBytes.reversed()) : inputBytes
+        let value = CRCService.calculate(data: data, configuration: configuration)
         calculatedResult = CRCService.formattedResult(value, configuration: configuration)
     }
 }
