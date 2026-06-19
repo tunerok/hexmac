@@ -164,4 +164,82 @@ final class ByteCompareServiceTests: XCTestCase {
         let csv = ByteCompareService.formatCSV(entries: entries)
         XCTAssertEqual(csv, "offset,kind,left_hex,right_hex\n00000000,added,,20")
     }
+
+    func testBuildDiffIndexMergesAdjacentRegions() {
+        let left: [UInt8] = [0x01, 0x02, 0x03, 0x04]
+        let right: [UInt8] = [0x01, 0xFF, 0xFE, 0x04]
+
+        let index = ByteCompareService.buildDiffIndex(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftByte: { offset in left[offset] },
+            rightByte: { offset in right[offset] },
+            bucketCount: 4
+        )
+
+        XCTAssertEqual(index.regions.count, 1)
+        XCTAssertEqual(index.regions[0].start, 1)
+        XCTAssertEqual(index.regions[0].end, 2)
+        XCTAssertEqual(index.regions[0].leftKind, .changed)
+        XCTAssertEqual(index.regions[0].rightKind, .changed)
+    }
+
+    func testBuildDiffIndexIdenticalFilesHaveNoRegions() {
+        let bytes: [UInt8] = [0x00, 0x01, 0x02, 0x03]
+
+        let index = ByteCompareService.buildDiffIndex(
+            leftSize: bytes.count,
+            rightSize: bytes.count,
+            leftByte: { offset in bytes[offset] },
+            rightByte: { offset in bytes[offset] }
+        )
+
+        XCTAssertTrue(index.regions.isEmpty)
+        XCTAssertEqual(index.map.leftKinds, Array(repeating: .equal, count: index.map.bucketCount))
+    }
+
+    func testDiffIndexHighlightLookup() {
+        let left: [UInt8] = [0x01, 0x02, 0x03]
+        let right: [UInt8] = [0x01, 0xFF]
+
+        let index = ByteCompareService.buildDiffIndex(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftByte: { offset in left[offset] },
+            rightByte: { offset in right[offset] }
+        )
+
+        XCTAssertNil(index.highlight(at: 0, side: .left))
+        XCTAssertEqual(index.highlight(at: 1, side: .left), .yellow)
+        XCTAssertEqual(index.highlight(at: 2, side: .left), .red)
+        XCTAssertNil(index.highlight(at: 2, side: .right))
+    }
+
+    func testCollectDiffEntriesFromIndexMatchesFullScan() {
+        let left: [UInt8] = [0x01, 0x02, 0x03]
+        let right: [UInt8] = [0x01, 0xFF]
+
+        let index = ByteCompareService.buildDiffIndex(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftByte: { offset in left[offset] },
+            rightByte: { offset in right[offset] }
+        )
+
+        let fromIndex = ByteCompareService.collectDiffEntries(
+            from: index,
+            leftSize: left.count,
+            rightSize: right.count,
+            leftByte: { offset in left[offset] },
+            rightByte: { offset in right[offset] }
+        )
+        let fullScan = ByteCompareService.collectDiffEntries(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftByte: { offset in left[offset] },
+            rightByte: { offset in right[offset] }
+        )
+
+        XCTAssertEqual(fromIndex, fullScan)
+    }
 }

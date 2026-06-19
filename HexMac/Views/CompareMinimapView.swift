@@ -55,17 +55,24 @@ struct CompareMinimapView: View {
     }
 
     private func minimapStrip(kinds: [DiffRegionKind], height: CGFloat) -> some View {
-        let bucketCount = max(kinds.count, 1)
-        let bucketHeight = max(1, height / CGFloat(bucketCount))
+        Canvas { context, size in
+            let bucketCount = max(kinds.count, 1)
+            let bucketHeight = max(1, size.height / CGFloat(bucketCount))
 
-        return VStack(spacing: 0) {
-            ForEach(0..<bucketCount, id: \.self) { index in
-                Rectangle()
-                    .fill(color(for: kinds[safe: index] ?? .equal))
-                    .frame(height: bucketHeight)
+            for index in 0..<bucketCount {
+                let rect = CGRect(
+                    x: 0,
+                    y: CGFloat(index) * bucketHeight,
+                    width: size.width,
+                    height: bucketHeight
+                )
+                context.fill(
+                    Path(rect),
+                    with: .color(color(for: kinds[safe: index] ?? .equal))
+                )
             }
         }
-        .frame(width: stripWidth)
+        .frame(width: stripWidth, height: height)
         .clipShape(RoundedRectangle(cornerRadius: 2))
     }
 

@@ -38,6 +38,60 @@ struct CompareDiffMap: Equatable {
     }
 }
 
+struct DiffRegion: Equatable {
+    let start: Int
+    let end: Int
+    let leftKind: DiffRegionKind
+    let rightKind: DiffRegionKind
+}
+
+struct CompareDiffIndex: Equatable {
+    let totalBytes: Int
+    let regions: [DiffRegion]
+    let map: CompareDiffMap
+
+    func highlight(at offset: Int, side: CompareSide) -> HighlightColor? {
+        guard offset >= 0, offset < totalBytes,
+              let region = regionContaining(offset) else { return nil }
+        let kind = side == .left ? region.leftKind : region.rightKind
+        return ByteCompareService.highlightColor(for: kind)
+    }
+
+    func highlights(
+        in range: Range<Int>,
+        side: CompareSide
+    ) -> [HighlightColor?] {
+        guard range.lowerBound < range.upperBound else { return [] }
+        return range.map { highlight(at: $0, side: side) }
+    }
+
+    private func regionContaining(_ offset: Int) -> DiffRegion? {
+        guard !regions.isEmpty else { return nil }
+
+        var low = 0
+        var high = regions.count - 1
+        while low <= high {
+            let mid = (low + high) / 2
+            let region = regions[mid]
+            if offset < region.start {
+                high = mid - 1
+            } else if offset > region.end {
+                low = mid + 1
+            } else {
+                return region
+            }
+        }
+        return nil
+    }
+}
+
+struct CompareRowContext {
+    let leftBytes: [UInt8]
+    let rightBytes: [UInt8]
+    let leftHighlights: [HighlightColor?]
+    let rightHighlights: [HighlightColor?]
+}
+
 enum CompareDiffExportFormat {
     case text
     case csv
@@ -53,6 +107,19 @@ enum CompareDiffExportFormat {
 enum ByteCompareService {
     static let defaultBucketCount = 400
 
+    static func highlightColor(for kind: DiffRegionKind) -> HighlightColor? {
+        switch kind {
+        case .deleted:
+            return .red
+        case .added:
+            return .green
+        case .changed:
+            return .yellow
+        case .equal:
+            return nil
+        }
+    }
+
     static func highlightColor(
         at offset: Int,
         side: CompareSide,
@@ -61,22 +128,14 @@ enum ByteCompareService {
         leftByte: UInt8?,
         rightByte: UInt8?
     ) -> HighlightColor? {
-        switch diffKind(
+        guard let kind = diffKind(
             leftSize: leftSize,
             rightSize: rightSize,
             leftByte: leftByte,
             rightByte: rightByte,
             side: side
-        ) {
-        case .deleted:
-            return .red
-        case .added:
-            return .green
-        case .changed:
-            return .yellow
-        case .equal, .none:
-            return nil
-        }
+        ), kind != .equal else { return nil }
+        return highlightColor(for: kind)
     }
 
     static func diffKind(
@@ -127,6 +186,32 @@ enum ByteCompareService {
     }
 
     static func collectDiffEntries(
+        from index: CompareDiffIndex,
+        leftSize: Int,
+        rightSize: Int,
+        leftByte: (Int) -> UInt8?,
+        rightByte: (Int) -> UInt8?
+    ) -> [DiffEntry] {
+        var entries: [DiffEntry] = []
+        entries.reserveCapacity(index.regions.count * 4)
+
+        for region in index.regions {
+            let kind = region.leftKind != .equal ? region.leftKind : region.rightKind
+            for offset in region.start...region.end {
+                let left = offset < leftSize ? leftByte(offset) : nil
+                let right = offset < rightSize ? rightByte(offset) : nil
+                entries.append(DiffEntry(
+                    offset: offset,
+                    leftByte: left,
+                    rightByte: right,
+                    kind: kind
+                ))
+            }
+        }
+        return entries
+    }
+
+    static func collectDiffEntries(
         leftSize: Int,
         rightSize: Int,
         leftByte: (Int) -> UInt8?,
@@ -154,6 +239,80 @@ enum ByteCompareService {
         return entries
     }
 
+    static func buildDiffIndex(
+        leftSize: Int,
+        rightSize: Int,
+        leftByte: (Int) -> UInt8?,
+        rightByte: (Int) -> UInt8?,
+        bucketCount: Int = defaultBucketCount
+    ) -> CompareDiffIndex {
+        let total = max(leftSize, rightSize)
+        let count = max(1, bucketCount)
+        var leftKinds = Array(repeating: DiffRegionKind.equal, count: count)
+        var rightKinds = Array(repeating: DiffRegionKind.equal, count: count)
+        var regions: [DiffRegion] = []
+
+        guard total > 0 else {
+            let map = CompareDiffMap(
+                bucketCount: count,
+                totalBytes: 0,
+                leftKinds: leftKinds,
+                rightKinds: rightKinds
+            )
+            return CompareDiffIndex(totalBytes: 0, regions: [], map: map)
+        }
+
+        var bucketIndex = 0
+        var nextBucketStart = count > 1 ? total / count : total
+
+        for offset in 0..<total {
+            while offset >= nextBucketStart, bucketIndex < count - 1 {
+                bucketIndex += 1
+                nextBucketStart = ((bucketIndex + 1) * total) / count
+            }
+
+            let left = offset < leftSize ? leftByte(offset) : nil
+            let right = offset < rightSize ? rightByte(offset) : nil
+            let kinds = diffKinds(leftByte: left, rightByte: right)
+
+            if kinds.left != .equal {
+                leftKinds[bucketIndex] = maxPriority(leftKinds[bucketIndex], kinds.left)
+            }
+            if kinds.right != .equal {
+                rightKinds[bucketIndex] = maxPriority(rightKinds[bucketIndex], kinds.right)
+            }
+
+            guard kinds.left != .equal || kinds.right != .equal else { continue }
+
+            if let last = regions.last,
+               last.end == offset - 1,
+               last.leftKind == kinds.left,
+               last.rightKind == kinds.right {
+                regions[regions.count - 1] = DiffRegion(
+                    start: last.start,
+                    end: offset,
+                    leftKind: kinds.left,
+                    rightKind: kinds.right
+                )
+            } else {
+                regions.append(DiffRegion(
+                    start: offset,
+                    end: offset,
+                    leftKind: kinds.left,
+                    rightKind: kinds.right
+                ))
+            }
+        }
+
+        let map = CompareDiffMap(
+            bucketCount: count,
+            totalBytes: total,
+            leftKinds: leftKinds,
+            rightKinds: rightKinds
+        )
+        return CompareDiffIndex(totalBytes: total, regions: regions, map: map)
+    }
+
     static func buildDiffMap(
         leftSize: Int,
         rightSize: Int,
@@ -161,62 +320,13 @@ enum ByteCompareService {
         rightByte: (Int) -> UInt8?,
         bucketCount: Int = defaultBucketCount
     ) -> CompareDiffMap {
-        let total = max(leftSize, rightSize)
-        let count = max(1, bucketCount)
-        var leftKinds = Array(repeating: DiffRegionKind.equal, count: count)
-        var rightKinds = Array(repeating: DiffRegionKind.equal, count: count)
-
-        guard total > 0 else {
-            return CompareDiffMap(
-                bucketCount: count,
-                totalBytes: 0,
-                leftKinds: leftKinds,
-                rightKinds: rightKinds
-            )
-        }
-
-        for bucketIndex in 0..<count {
-            let start = (bucketIndex * total) / count
-            let end = ((bucketIndex + 1) * total) / count
-            guard start < end else { continue }
-
-            var leftBucketKind = DiffRegionKind.equal
-            var rightBucketKind = DiffRegionKind.equal
-
-            for offset in start..<end {
-                let left = offset < leftSize ? leftByte(offset) : nil
-                let right = offset < rightSize ? rightByte(offset) : nil
-
-                if let kind = diffKind(
-                    leftSize: leftSize,
-                    rightSize: rightSize,
-                    leftByte: left,
-                    rightByte: right,
-                    side: .left
-                ), kind != .equal {
-                    leftBucketKind = maxPriority(leftBucketKind, kind)
-                }
-                if let kind = diffKind(
-                    leftSize: leftSize,
-                    rightSize: rightSize,
-                    leftByte: left,
-                    rightByte: right,
-                    side: .right
-                ), kind != .equal {
-                    rightBucketKind = maxPriority(rightBucketKind, kind)
-                }
-            }
-
-            leftKinds[bucketIndex] = leftBucketKind
-            rightKinds[bucketIndex] = rightBucketKind
-        }
-
-        return CompareDiffMap(
-            bucketCount: count,
-            totalBytes: total,
-            leftKinds: leftKinds,
-            rightKinds: rightKinds
-        )
+        buildDiffIndex(
+            leftSize: leftSize,
+            rightSize: rightSize,
+            leftByte: leftByte,
+            rightByte: rightByte,
+            bucketCount: bucketCount
+        ).map
     }
 
     static func formatTextReport(
@@ -293,6 +403,28 @@ enum ByteCompareService {
     static func byte(at offset: Int, in size: Int, provider: (Int) -> UInt8?) -> UInt8? {
         guard offset < size else { return nil }
         return provider(offset)
+    }
+
+    private static func diffKinds(
+        leftByte: UInt8?,
+        rightByte: UInt8?
+    ) -> (left: DiffRegionKind, right: DiffRegionKind) {
+        let hasLeft = leftByte != nil
+        let hasRight = rightByte != nil
+
+        switch (hasLeft, hasRight) {
+        case (true, false):
+            return (.deleted, .equal)
+        case (false, true):
+            return (.equal, .added)
+        case (true, true):
+            guard let leftByte, let rightByte, leftByte != rightByte else {
+                return (.equal, .equal)
+            }
+            return (.changed, .changed)
+        case (false, false):
+            return (.equal, .equal)
+        }
     }
 
     private static func maxPriority(_ current: DiffRegionKind, _ candidate: DiffRegionKind) -> DiffRegionKind {

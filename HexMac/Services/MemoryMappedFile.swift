@@ -111,7 +111,13 @@ final class MemoryMappedFile {
         guard range.lowerBound >= 0, range.upperBound <= size, let pointer else {
             throw MemoryMappedFileError.outOfBounds
         }
-        return range.map { pointer.load(fromByteOffset: $0, as: UInt8.self) }
+        let count = range.count
+        var result = [UInt8](repeating: 0, count: count)
+        result.withUnsafeMutableBytes { destination in
+            guard let baseAddress = destination.baseAddress else { return }
+            memcpy(baseAddress, pointer.advanced(by: range.lowerBound), count)
+        }
+        return result
     }
 
     func replaceByte(at offset: Int, with value: UInt8) throws {

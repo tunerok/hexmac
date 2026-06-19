@@ -39,7 +39,7 @@ struct ComparePaneView: View {
                         Divider()
 
                         CompareMinimapView(
-                            diffMap: pane.comparisonDiffMap,
+                            diffMap: pane.comparisonDiffIndex?.map,
                             isLoading: pane.isDiffMapLoading,
                             visibleRowRange: visibleRowRange,
                             rowCount: pane.rowCount,
@@ -76,9 +76,11 @@ struct ComparePaneView: View {
                 Button(String(localized: "Export as Text (.txt)")) {
                     pane.exportComparisonDiff(format: .text)
                 }
+                .disabled(pane.isComparisonExporting)
                 Button(String(localized: "Export as CSV (.csv)")) {
                     pane.exportComparisonDiff(format: .csv)
                 }
+                .disabled(pane.isComparisonExporting)
             } label: {
                 Label(String(localized: "Export Diff…"), systemImage: "square.and.arrow.up")
                     .labelStyle(.iconOnly)

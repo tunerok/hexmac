@@ -35,6 +35,7 @@ struct CompareHexGridView: View {
                         .onScrollGeometryChange(for: ClosedRange<Int>.self) { geometry in
                             visibleRowRange(from: geometry)
                         } action: { _, range in
+                            guard range != visibleRowRange else { return }
                             visibleRowRange = range
                         }
                         .onChange(of: pane.scrollTargetOffset) { _, target in
@@ -65,31 +66,35 @@ struct CompareHexGridView: View {
     }
 
     private func pairedRow(rowIndex: Int) -> some View {
-        HStack(spacing: 0) {
+        let context = pane.comparisonRowContext(for: rowIndex)
+
+        return HStack(spacing: 0) {
             HexRowView(
                 rowIndex: rowIndex,
-                bytes: pane.comparisonRowBytes(for: rowIndex, side: .left),
+                bytes: context.leftBytes,
                 fileSize: pane.fileSize,
                 bytesPerRow: pane.bytesPerRow.rawValue,
                 selection: pane.comparisonLeftSelection,
                 editingOffset: nil,
                 editingHexText: "",
                 textEncoding: pane.textEncoding,
-                highlightColor: { pane.diffHighlight(at: $0, side: .left) }
+                highlightColor: { _ in nil },
+                columnHighlights: context.leftHighlights
             )
 
             panelSeparator
 
             HexRowView(
                 rowIndex: rowIndex,
-                bytes: pane.comparisonRowBytes(for: rowIndex, side: .right),
+                bytes: context.rightBytes,
                 fileSize: pane.fileSize,
                 bytesPerRow: pane.bytesPerRow.rawValue,
                 selection: pane.comparisonRightSelection,
                 editingOffset: nil,
                 editingHexText: "",
                 textEncoding: pane.textEncoding,
-                highlightColor: { pane.diffHighlight(at: $0, side: .right) }
+                highlightColor: { _ in nil },
+                columnHighlights: context.rightHighlights
             )
         }
     }

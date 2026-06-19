@@ -15,9 +15,41 @@ struct HexRowView: View {
     let editingHexText: String
     let textEncoding: TextEncodingMode
     let highlightColor: (Int) -> HighlightColor?
+    let columnHighlights: [HighlightColor?]?
+
+    init(
+        rowIndex: Int,
+        bytes: [UInt8],
+        fileSize: Int,
+        bytesPerRow: Int,
+        selection: HexSelection?,
+        editingOffset: Int?,
+        editingHexText: String,
+        textEncoding: TextEncodingMode,
+        highlightColor: @escaping (Int) -> HighlightColor?,
+        columnHighlights: [HighlightColor?]? = nil
+    ) {
+        self.rowIndex = rowIndex
+        self.bytes = bytes
+        self.fileSize = fileSize
+        self.bytesPerRow = bytesPerRow
+        self.selection = selection
+        self.editingOffset = editingOffset
+        self.editingHexText = editingHexText
+        self.textEncoding = textEncoding
+        self.highlightColor = highlightColor
+        self.columnHighlights = columnHighlights
+    }
 
     private var rowOffset: Int {
         HexFormatter.rowOffset(for: rowIndex, bytesPerRow: bytesPerRow)
+    }
+
+    private func highlightForColumn(_ column: Int, offset: Int) -> HighlightColor? {
+        if let columnHighlights, column < columnHighlights.count {
+            return columnHighlights[column]
+        }
+        return highlightColor(offset)
     }
 
     var body: some View {
@@ -37,7 +69,7 @@ struct HexRowView: View {
                             isSelected: selection?.contains(offset) ?? false,
                             isEditing: editingOffset == offset,
                             editingHexText: editingHexText,
-                            highlightColor: highlightColor(offset)
+                            highlightColor: highlightForColumn(column, offset: offset)
                         )
                     } else if column < bytesPerRow {
                         Text("  ")
@@ -66,7 +98,7 @@ struct HexRowView: View {
                     TextCharacterCellView(
                         character: textCharacter(at: column),
                         isSelected: selection?.contains(offset) ?? false,
-                        highlightColor: highlightColor(offset)
+                        highlightColor: highlightForColumn(column, offset: offset)
                     )
                 } else if column < bytesPerRow {
                     Text(" ")
