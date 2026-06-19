@@ -170,8 +170,19 @@ enum TerminalCommandParser {
     }
 
     private static func runGoto(tokens: [String], fileSize: Int) -> TerminalCommandResult {
-        guard tokens.count == 2, let offset = TerminalOffsetParser.parse(tokens[1]) else {
-            return .error(String(localized: "Usage: goto <offset>"))
+        guard tokens.count == 2 else {
+            return .error(String(localized: "Usage: goto <offset|end>"))
+        }
+
+        if tokens[1].lowercased() == "end" {
+            guard fileSize > 0 else {
+                return .error(String(localized: "File is empty"))
+            }
+            return .navigate(fileSize - 1)
+        }
+
+        guard let offset = TerminalOffsetParser.parse(tokens[1]) else {
+            return .error(String(localized: "Usage: goto <offset|end>"))
         }
         if let boundsError = TerminalOffsetParser.validateInFile(offset: offset, text: tokens[1], fileSize: fileSize) {
             return .error(boundsError.message)
@@ -651,10 +662,11 @@ enum TerminalCommandParser {
 
     private static let helpOverviewText = """
     help [crc|ranges|filters]
-    goto <offset>
+    goto <offset|end>
 
     Navigation:
       goto <offset>                 jump to byte offset in the file
+      goto end                      jump to the last byte in the file
 
     Byte math (ranges + optional filters, see help filters):
       sum <ranges>                  sum of bytes → 0xHEX (decimal)

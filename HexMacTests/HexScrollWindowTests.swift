@@ -68,4 +68,23 @@ struct HexScrollWindowTests {
         window.adaptToBytesPerRowChange(from: 8, to: 16, rowCount: 100)
         #expect(window.firstVisibleRow == 12)
     }
+
+    @Test func revealRowDoesNotScrollWhenRowIsVisible() {
+        var window = HexScrollWindow(firstVisibleRow: 10, visibleRowCount: 10)
+        window.revealRow(15, rowCount: 100)
+        #expect(window.firstVisibleRow == 10)
+    }
+
+    @Test func revealRowScrollsUpWhenRowIsAboveViewport() {
+        var window = HexScrollWindow(firstVisibleRow: 20, visibleRowCount: 10)
+        window.revealRow(5, rowCount: 100)
+        #expect(window.firstVisibleRow == 5)
+    }
+
+    @Test func revealRowScrollsDownMinimallyWhenRowIsBelowViewport() {
+        var window = HexScrollWindow(firstVisibleRow: 10, visibleRowCount: 10)
+        window.revealRow(25, rowCount: 100)
+        #expect(window.firstVisibleRow == 16)
+        #expect(window.lastVisibleRow(for: 100) == 25)
+    }
 }

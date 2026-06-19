@@ -12,6 +12,7 @@ struct HexViewportScrollView<RowContent: View, Overlay: View>: View {
     let bytesPerRow: Int
     let visibleRowCount: Int
     let scrollTargetRow: Int?
+    let scrollRevealOffset: Int?
     let scrollAnchor: HexScrollAnchor
     let linkedScrollRow: Binding<Int?>?
     let onVisibleRowChanged: ((Int) -> Void)?
@@ -19,6 +20,7 @@ struct HexViewportScrollView<RowContent: View, Overlay: View>: View {
     let onPrefetchRange: ((Range<Int>) -> Void)?
     let onEnsureVisibleRowsLoaded: ((Range<Int>) -> Void)?
     let onScrollTargetHandled: () -> Void
+    let onScrollRevealHandled: () -> Void
     @ViewBuilder let rowContent: (Int) -> RowContent
     @ViewBuilder let overlay: (Int) -> Overlay
 
@@ -26,6 +28,7 @@ struct HexViewportScrollView<RowContent: View, Overlay: View>: View {
     @State private var scrollAccumulator: CGFloat = 0
     @State private var isApplyingLinkedScroll = false
     @State private var lastHandledScrollTarget: Int?
+    @State private var lastHandledScrollReveal: Int?
     @State private var lastWheelApplyTime: Date = .distantPast
 
     private var scrollWindow: HexScrollWindow {
@@ -88,6 +91,14 @@ struct HexViewportScrollView<RowContent: View, Overlay: View>: View {
             }
             guard let newValue else { return }
             applyScrollTarget(newValue, anchor: scrollAnchor)
+        }
+        .onChange(of: scrollRevealOffset) { _, newValue in
+            if newValue == nil {
+                lastHandledScrollReveal = nil
+                return
+            }
+            guard let newValue else { return }
+            applyScrollReveal(newValue)
         }
         .onChange(of: linkedScrollRow?.wrappedValue) { _, row in
             guard let row, !isApplyingLinkedScroll else { return }
@@ -187,6 +198,28 @@ struct HexViewportScrollView<RowContent: View, Overlay: View>: View {
         #endif
         reportVisibleState(window: window)
         onScrollTargetHandled()
+    }
+
+    private func applyScrollReveal(_ offset: Int) {
+        if offset == lastHandledScrollReveal {
+            onScrollRevealHandled()
+            return
+        }
+        lastHandledScrollReveal = offset
+        guard bytesPerRow > 0, rowCount > 0 else {
+            onScrollRevealHandled()
+            return
+        }
+        let row = offset / bytesPerRow
+        var window = scrollWindow
+        window.revealRow(row, rowCount: rowCount)
+        scrollPhase = .idle
+        applyWindow(window)
+        #if DEBUG
+        HexScrollLog.windowState(window, rowCount: rowCount, event: "reveal")
+        #endif
+        reportVisibleState(window: window)
+        onScrollRevealHandled()
     }
 
     private func reportVisibleState(window: HexScrollWindow) {

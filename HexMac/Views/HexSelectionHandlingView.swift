@@ -17,6 +17,7 @@ struct HexSelectionHandlingView: NSViewRepresentable {
     let onBeginSelection: (Int, Bool) -> Void
     let onUpdateSelection: (Int) -> Void
     let onEndSelection: (Int) -> Void
+    let onMoveSelection: (SelectionMoveDirection, Bool) -> Void
     let onHexDigit: (Character) -> Void
     let onBackspace: () -> Void
     let onCancelEdit: () -> Void
@@ -42,6 +43,7 @@ struct HexSelectionHandlingView: NSViewRepresentable {
         onBeginSelection: @escaping (Int, Bool) -> Void,
         onUpdateSelection: @escaping (Int) -> Void,
         onEndSelection: @escaping (Int) -> Void,
+        onMoveSelection: @escaping (SelectionMoveDirection, Bool) -> Void,
         onHexDigit: @escaping (Character) -> Void,
         onBackspace: @escaping () -> Void,
         onCancelEdit: @escaping () -> Void,
@@ -66,6 +68,7 @@ struct HexSelectionHandlingView: NSViewRepresentable {
         self.onBeginSelection = onBeginSelection
         self.onUpdateSelection = onUpdateSelection
         self.onEndSelection = onEndSelection
+        self.onMoveSelection = onMoveSelection
         self.onHexDigit = onHexDigit
         self.onBackspace = onBackspace
         self.onCancelEdit = onCancelEdit
@@ -129,6 +132,10 @@ struct HexSelectionHandlingView: NSViewRepresentable {
 
         func handleCancelEdit() {
             parent.onCancelEdit()
+        }
+
+        func handleMoveSelection(_ direction: SelectionMoveDirection, extending: Bool) {
+            parent.onMoveSelection(direction, extending)
         }
 
         func handleMouseDragged(at point: CGPoint) {
@@ -348,6 +355,12 @@ final class HexSelectionMouseView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if let direction = SelectionMoveDirection(keyCode: event.keyCode) {
+            let extending = event.modifierFlags.contains(.shift)
+            coordinator?.handleMoveSelection(direction, extending: extending)
+            return
+        }
+
         guard coordinator?.parent.isReadOnly != true else {
             super.keyDown(with: event)
             return

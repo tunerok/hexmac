@@ -90,6 +90,21 @@ struct HexScrollWindow: Equatable {
         firstVisibleRow = min(max(0, target), maxFirstVisibleRow(for: rowCount))
     }
 
+    mutating func revealRow(_ row: Int, rowCount: Int) {
+        guard rowCount > 0 else {
+            firstVisibleRow = 0
+            return
+        }
+        let clampedRow = min(max(0, row), rowCount - 1)
+        let lastVisible = lastVisibleRow(for: rowCount)
+        if clampedRow < firstVisibleRow {
+            firstVisibleRow = clampedRow
+        } else if clampedRow > lastVisible {
+            firstVisibleRow = clampedRow - visibleRowCount + 1
+            clamp(for: rowCount)
+        }
+    }
+
     mutating func jumpToOffset(_ offset: Int, bytesPerRow: Int, rowCount: Int, anchor: HexScrollAnchor) {
         guard bytesPerRow > 0 else { return }
         jumpTo(row: offset / bytesPerRow, rowCount: rowCount, anchor: anchor)

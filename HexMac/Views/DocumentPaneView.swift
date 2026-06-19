@@ -41,6 +41,7 @@ struct DocumentPaneView: View {
             selection: pane.selection,
             editingOffset: pane.editingOffset,
             scrollTargetOffset: pane.scrollTargetOffset,
+            scrollRevealOffset: pane.scrollRevealOffset,
             editingHexText: pane.editingHexText,
             textEncoding: pane.textEncoding,
             highlights: pane.highlights,
@@ -61,6 +62,10 @@ struct DocumentPaneView: View {
             },
             onEndSelection: { offset in
                 pane.endSelection(at: offset)
+            },
+            onMoveSelection: { direction, extending in
+                workspace.activatePane(id: pane.id)
+                pane.moveSelection(direction: direction, extending: extending)
             },
             onHexDigit: { character in
                 pane.typeHexDigit(character)
@@ -100,6 +105,9 @@ struct DocumentPaneView: View {
             },
             onScrollTargetHandled: {
                 pane.clearScrollTarget()
+            },
+            onScrollRevealHandled: {
+                pane.clearScrollReveal()
             }
         )
     }

@@ -22,6 +22,7 @@ final class DocumentPaneViewModel: Identifiable {
     var bytesPerRow: BytesPerRowSetting = .sixteen
     var highlights: [HexHighlight] = []
     var scrollTargetOffset: Int?
+    var scrollRevealOffset: Int?
     var showCRCSheet = false
     var showHashSheet = false
     var showFillDialog = false
@@ -157,6 +158,7 @@ final class DocumentPaneViewModel: Identifiable {
             selection = fileSize > 0 ? .single(at: 0) : nil
             highlights = []
             scrollTargetOffset = nil
+            scrollRevealOffset = nil
             terminalHistory = []
             findSession = nil
             editingOffset = nil
@@ -184,6 +186,7 @@ final class DocumentPaneViewModel: Identifiable {
             comparisonActiveSide = .left
             highlights = []
             scrollTargetOffset = nil
+            scrollRevealOffset = nil
             terminalHistory = []
             findSession = nil
             editingOffset = nil
@@ -269,6 +272,7 @@ final class DocumentPaneViewModel: Identifiable {
         selection = nil
         highlights = []
         scrollTargetOffset = nil
+        scrollRevealOffset = nil
         scrollSessionID &+= 1
         showCRCSheet = false
         showHashSheet = false
@@ -387,6 +391,53 @@ final class DocumentPaneViewModel: Identifiable {
 
     func endComparisonSelection(at offset: Int, side: CompareSide) {
         updateComparisonSelection(to: offset, side: side)
+    }
+
+    func moveSelection(direction: SelectionMoveDirection, extending: Bool) {
+        guard fileSize > 0 else { return }
+        if editingOffset != nil {
+            cancelEditing()
+        }
+
+        let delta = direction.byteDelta(bytesPerRow: bytesPerRow.rawValue)
+        let currentOffset = selection?.active ?? 0
+        let newOffset = max(0, min(fileSize - 1, currentOffset + delta))
+        guard newOffset != currentOffset || selection != nil else { return }
+
+        if extending {
+            if let current = selection {
+                selection = HexSelection(anchor: current.anchor, active: newOffset)
+            } else {
+                selection = HexSelection(anchor: currentOffset, active: newOffset)
+            }
+        } else {
+            selection = .single(at: newOffset)
+        }
+        scrollRevealOffset = newOffset
+    }
+
+    func moveComparisonSelection(direction: SelectionMoveDirection, extending: Bool, side: CompareSide) {
+        guard fileSize > 0 else { return }
+        comparisonActiveSide = side
+
+        let delta = direction.byteDelta(bytesPerRow: bytesPerRow.rawValue)
+        let current = comparisonSelection(for: side)
+        let currentOffset = current?.active ?? 0
+        let newOffset = max(0, min(fileSize - 1, currentOffset + delta))
+        guard newOffset != currentOffset || current != nil else { return }
+
+        let newSelection: HexSelection
+        if extending {
+            if let current {
+                newSelection = HexSelection(anchor: current.anchor, active: newOffset)
+            } else {
+                newSelection = HexSelection(anchor: currentOffset, active: newOffset)
+            }
+        } else {
+            newSelection = .single(at: newOffset)
+        }
+        setComparisonSelection(newSelection, for: side)
+        scrollRevealOffset = newOffset
     }
 
     func comparisonRowContext(for rowIndex: Int) -> CompareRowContext {
@@ -548,6 +599,10 @@ final class DocumentPaneViewModel: Identifiable {
 
     func clearScrollTarget() {
         scrollTargetOffset = nil
+    }
+
+    func clearScrollReveal() {
+        scrollRevealOffset = nil
     }
 
     func copySelectionHex() {

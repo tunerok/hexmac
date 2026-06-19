@@ -40,6 +40,7 @@ struct CompareHexGridView: View {
                             bytesPerRow: pane.bytesPerRow.rawValue,
                             visibleRowCount: visibleRowCount,
                             scrollTargetRow: scrollTargetRow,
+                            scrollRevealOffset: pane.scrollRevealOffset,
                             scrollAnchor: .top,
                             linkedScrollRow: nil,
                             onVisibleRowChanged: nil,
@@ -60,6 +61,9 @@ struct CompareHexGridView: View {
                             onEnsureVisibleRowsLoaded: nil,
                             onScrollTargetHandled: {
                                 pane.clearScrollTarget()
+                            },
+                            onScrollRevealHandled: {
+                                pane.clearScrollReveal()
                             },
                             rowContent: { rowIndex in
                                 pairedRow(rowIndex: rowIndex)
@@ -217,6 +221,10 @@ struct CompareHexGridView: View {
             onBeginSelection: onBegin,
             onUpdateSelection: onUpdate,
             onEndSelection: onEnd,
+            onMoveSelection: { direction, extending in
+                onActivate()
+                pane.moveComparisonSelection(direction: direction, extending: extending, side: side)
+            },
             onHexDigit: { _ in },
             onBackspace: {},
             onCancelEdit: {},

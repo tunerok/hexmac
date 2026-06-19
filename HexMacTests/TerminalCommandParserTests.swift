@@ -236,4 +236,20 @@ final class TerminalCommandParserTests: XCTestCase {
         XCTAssertTrue(message.contains("300"))
         XCTAssertTrue(message.contains("200"))
     }
+
+    func testGotoEnd() {
+        let result = TerminalCommandParser.execute("goto end", fileSize: 256, bytesProvider: makeProvider())
+        guard case .navigate(let offset) = result else {
+            return XCTFail("Expected navigate")
+        }
+        XCTAssertEqual(offset, 255)
+    }
+
+    func testGotoEndEmptyFile() {
+        let result = TerminalCommandParser.execute("goto end", fileSize: 0, bytesProvider: { _ in [] })
+        guard case .error(let message) = result else {
+            return XCTFail("Expected error")
+        }
+        XCTAssertEqual(message, String(localized: "File is empty"))
+    }
 }
