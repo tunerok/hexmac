@@ -10,10 +10,16 @@ struct HashCalculatorView: View {
     let fileName: String
     let title: String
     let inputBytes: [UInt8]
+    var inputRange: Range<Int>?
+    var bytesProvider: ((Range<Int>) -> [UInt8])?
     let onClose: () -> Void
 
     @State private var algorithm: HashAlgorithm = .sha256
     @State private var calculatedResult: String?
+
+    private var displayedByteCount: Int {
+        inputRange?.count ?? inputBytes.count
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -29,7 +35,7 @@ struct HashCalculatorView: View {
 
             Text(
                 String(
-                    localized: "\(inputBytes.count) bytes",
+                    localized: "\(displayedByteCount) bytes",
                     comment: "Hash input byte count"
                 )
             )
@@ -78,7 +84,15 @@ struct HashCalculatorView: View {
     }
 
     private func calculate() {
-        calculatedResult = HashAlgorithm.calculate(algorithm, data: inputBytes)
+        if let inputRange, let bytesProvider {
+            calculatedResult = HashAlgorithm.calculate(
+                algorithm,
+                in: inputRange,
+                bytesProvider: bytesProvider
+            )
+        } else {
+            calculatedResult = HashAlgorithm.calculate(algorithm, data: inputBytes)
+        }
     }
 }
 

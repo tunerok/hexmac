@@ -111,16 +111,59 @@ enum BytePatternSearch {
         in range: Range<Int>,
         bytesProvider: (Range<Int>) -> [UInt8]
     ) -> [Int] {
+        findAll(
+            pattern: pattern,
+            in: range,
+            bytesProvider: bytesProvider,
+            chunkSize: ChunkedByteReader.defaultChunkSize
+        )
+    }
+
+    static func findAll(
+        pattern: [UInt8],
+        in range: Range<Int>,
+        bytesProvider: (Range<Int>) -> [UInt8],
+        chunkSize: Int
+    ) -> [Int] {
         guard !pattern.isEmpty, range.lowerBound < range.upperBound else { return [] }
 
-        let haystack = bytesProvider(range)
+        if range.count <= chunkSize + pattern.count {
+            return findAllInMemory(pattern: pattern, haystack: bytesProvider(range), rangeStart: range.lowerBound)
+        }
+
+        var matches: [Int] = []
+        let overlap = max(0, pattern.count - 1)
+        var seen = Set<Int>()
+
+        ChunkedByteReader.forEachChunk(
+            in: range,
+            chunkSize: chunkSize,
+            overlap: overlap,
+            bytesProvider: bytesProvider
+        ) { chunk, chunkStart in
+            let local = findAllInMemory(pattern: pattern, haystack: chunk, rangeStart: chunkStart)
+            for match in local where match >= range.lowerBound && match < range.upperBound {
+                if seen.insert(match).inserted {
+                    matches.append(match)
+                }
+            }
+        }
+
+        return matches.sorted()
+    }
+
+    private static func findAllInMemory(
+        pattern: [UInt8],
+        haystack: [UInt8],
+        rangeStart: Int
+    ) -> [Int] {
         guard haystack.count >= pattern.count else { return [] }
 
         var matches: [Int] = []
         let lastStart = haystack.count - pattern.count
         for start in 0...lastStart {
             if haystack[start..<(start + pattern.count)].elementsEqual(pattern) {
-                matches.append(range.lowerBound + start)
+                matches.append(rangeStart + start)
             }
         }
         return matches

@@ -34,6 +34,7 @@ final class DocumentPaneViewModel: Identifiable {
     var binarySelectionByteCount = 0
     var crcInputBytes: [UInt8] = []
     var hashInputBytes: [UInt8] = []
+    var hashInputRange: Range<Int>?
     var hashTitle = ""
     var hashFileName = ""
     var histogramCounts: [Int] = Array(repeating: 0, count: 256)
@@ -190,8 +191,8 @@ final class DocumentPaneViewModel: Identifiable {
         isDiffMapLoading = true
         comparisonDiffIndex = nil
 
-        let leftFile = left.mappedFile
-        let rightFile = right.mappedFile
+        let leftArray = left.byteArray
+        let rightArray = right.byteArray
         let leftSize = left.fileSize
         let rightSize = right.fileSize
 
@@ -199,8 +200,8 @@ final class DocumentPaneViewModel: Identifiable {
             let index = ByteCompareService.buildDiffIndex(
                 leftSize: leftSize,
                 rightSize: rightSize,
-                leftByte: { offset in try? leftFile.byte(at: offset) },
-                rightByte: { offset in try? rightFile.byte(at: offset) },
+                leftByte: { offset in leftArray.byte(at: UInt64(offset)) },
+                rightByte: { offset in rightArray.byte(at: UInt64(offset)) },
                 bucketCount: bucketCount
             )
 
@@ -233,6 +234,7 @@ final class DocumentPaneViewModel: Identifiable {
         binarySelectionByteCount = 0
         crcInputBytes = []
         hashInputBytes = []
+        hashInputRange = nil
         hashTitle = ""
         hashFileName = ""
         histogramCounts = Array(repeating: 0, count: 256)
@@ -364,7 +366,7 @@ final class DocumentPaneViewModel: Identifiable {
         guard count > 0 else { return [] }
         let clampedEnd = min(offset + count, doc.fileSize)
         guard offset < clampedEnd else { return [] }
-        return (try? doc.mappedFile.bytes(in: offset..<clampedEnd)) ?? []
+        return doc.bytes(in: offset..<clampedEnd)
     }
 
     func comparisonBytes(in range: Range<Int>, side: CompareSide) -> [UInt8] {
@@ -372,7 +374,7 @@ final class DocumentPaneViewModel: Identifiable {
         let doc = side == .left ? left : right
         let clamped = max(0, range.lowerBound)..<min(range.upperBound, doc.fileSize)
         guard clamped.lowerBound < clamped.upperBound else { return [] }
-        return (try? doc.mappedFile.bytes(in: clamped)) ?? []
+        return doc.bytes(in: clamped)
     }
 
     func copyComparisonSelection(side: CompareSide) {
@@ -478,14 +480,10 @@ final class DocumentPaneViewModel: Identifiable {
         let range = selection.start..<(selection.end + 1)
         guard !range.isEmpty else { return }
 
-        do {
-            let oldValues = try document.mappedFile.replaceBytes(in: range, with: value)
-            document.markDirty()
-            registerRangeUndo(range: range, oldValues: oldValues, newValue: value)
-            bumpDataRevision()
-        } catch {
-            presentError(error.localizedDescription)
-        }
+        let oldValues = document.replaceBytes(in: range, with: value)
+        document.markDirty()
+        registerRangeUndo(range: range, oldValues: oldValues, newValue: value)
+        bumpDataRevision()
     }
 
     func openCRCSheet() {
@@ -496,7 +494,8 @@ final class DocumentPaneViewModel: Identifiable {
 
     func openHashForAll() {
         guard fileSize > 0 else { return }
-        hashInputBytes = bytes(in: 0..<fileSize)
+        hashInputBytes = []
+        hashInputRange = 0..<fileSize
         hashFileName = document?.displayName ?? String(localized: "Untitled")
         hashTitle = String(localized: "Entire file")
         showHashSheet = true
@@ -507,6 +506,7 @@ final class DocumentPaneViewModel: Identifiable {
         let data = bytes(in: selection.start..<(selection.end + 1))
         guard !data.isEmpty else { return }
         hashInputBytes = data
+        hashInputRange = nil
         hashFileName = document?.displayName ?? String(localized: "Untitled")
         hashTitle = String(
             localized: "Selection: 0x\(HexFormatter.offsetString(for: selection.start)) – 0x\(HexFormatter.offsetString(for: selection.end))"
@@ -531,9 +531,10 @@ final class DocumentPaneViewModel: Identifiable {
 
     func openHistogramForAll() {
         guard fileSize > 0 else { return }
-        let data = bytes(in: 0..<fileSize)
-        histogramCounts = HistogramBuilder.build(from: data)
-        histogramByteCount = data.count
+        histogramCounts = HistogramBuilder.build(in: 0..<fileSize) { [weak self] range in
+            self?.bytes(in: range) ?? []
+        }
+        histogramByteCount = fileSize
         histogramFileName = document?.displayName ?? String(localized: "Untitled")
         histogramTitle = String(localized: "Entire file")
         showHistogramSheet = true
@@ -702,14 +703,14 @@ final class DocumentPaneViewModel: Identifiable {
 
     func byte(at offset: Int) -> UInt8? {
         guard let document, offset >= 0, offset < document.fileSize else { return nil }
-        return try? document.mappedFile.byte(at: offset)
+        return document.byte(at: offset)
     }
 
     func bytes(in range: Range<Int>) -> [UInt8] {
         guard let document else { return [] }
         let clamped = max(0, range.lowerBound)..<min(range.upperBound, document.fileSize)
         guard clamped.lowerBound < clamped.upperBound else { return [] }
-        return (try? document.mappedFile.bytes(in: clamped)) ?? []
+        return document.bytes(in: clamped)
     }
 
     func rowBytes(for rowIndex: Int) -> [UInt8] {
@@ -779,7 +780,8 @@ final class DocumentPaneViewModel: Identifiable {
     func save() {
         guard let document else { return }
         do {
-            try document.mappedFile.sync()
+            try ByteArrayWriter.write(document.byteArray, to: document.url)
+            document.collapseToFileBacking()
             document.markClean()
         } catch {
             presentError(error.localizedDescription)
@@ -793,8 +795,7 @@ final class DocumentPaneViewModel: Identifiable {
         }
 
         do {
-            let data = buildFullData()
-            try data.write(to: url, options: .atomic)
+            try ByteArrayWriter.write(document.byteArray, to: url)
             loadFile(from: url)
         } catch {
             presentError(error.localizedDescription)
@@ -812,54 +813,41 @@ final class DocumentPaneViewModel: Identifiable {
     private func commitByte(at offset: Int, value: UInt8, wasAppended: Bool) {
         guard let document else { return }
 
-        do {
-            if wasAppended {
-                let oldValue = byte(at: offset) ?? 0
-                if value != oldValue {
-                    try document.mappedFile.replaceByte(at: offset, with: value)
-                }
-                document.markDirty()
-                registerAppendUndo(at: offset, value: value)
-                bumpDataRevision()
-            } else {
-                guard let oldValue = byte(at: offset) else { return }
-                guard value != oldValue else { return }
-                try document.mappedFile.replaceByte(at: offset, with: value)
-                document.markDirty()
-                registerUndo(at: offset, oldValue: oldValue, newValue: value)
-                bumpDataRevision()
+        if wasAppended {
+            let oldValue = byte(at: offset) ?? 0
+            if value != oldValue {
+                _ = document.replaceByte(at: offset, with: value)
             }
-        } catch {
-            presentError(error.localizedDescription)
+            document.markDirty()
+            registerAppendUndo(at: offset, value: value)
+            bumpDataRevision()
+        } else {
+            guard let oldValue = byte(at: offset) else { return }
+            guard value != oldValue else { return }
+            _ = document.replaceByte(at: offset, with: value)
+            document.markDirty()
+            registerUndo(at: offset, oldValue: oldValue, newValue: value)
+            bumpDataRevision()
         }
     }
 
     private func appendByte(_ value: UInt8) {
         guard let document else { return }
 
-        do {
-            try document.mappedFile.appendByte(value)
-            document.markDirty()
-            registerAppendUndo(at: fileSize - 1, value: value)
-            bumpDataRevision()
-        } catch {
-            presentError(error.localizedDescription)
-        }
+        document.appendByte(value)
+        document.markDirty()
+        registerAppendUndo(at: fileSize - 1, value: value)
+        bumpDataRevision()
     }
 
     @discardableResult
     private func appendPlaceholderByte() -> Bool {
         guard let document else { return false }
 
-        do {
-            try document.mappedFile.appendByte(0)
-            document.markDirty()
-            bumpDataRevision()
-            return true
-        } catch {
-            presentError(error.localizedDescription)
-            return false
-        }
+        document.appendByte(0)
+        document.markDirty()
+        bumpDataRevision()
+        return true
     }
 
     private func discardUncommittedPlaceholder() {
@@ -867,17 +855,13 @@ final class DocumentPaneViewModel: Identifiable {
         editingAppendedByte = false
 
         guard let document else { return }
-        do {
-            try document.mappedFile.resize(to: offset)
-            document.markDirty()
-            bumpDataRevision()
-            if fileSize > 0 {
-                selection = .single(at: min(offset, fileSize - 1))
-            } else {
-                selection = nil
-            }
-        } catch {
-            presentError(error.localizedDescription)
+        document.truncate(to: offset)
+        document.markDirty()
+        bumpDataRevision()
+        if fileSize > 0 {
+            selection = .single(at: min(offset, fileSize - 1))
+        } else {
+            selection = nil
         }
     }
 
@@ -903,19 +887,15 @@ final class DocumentPaneViewModel: Identifiable {
 
     private func undoAppend(at offset: Int) {
         guard let document, offset >= 0 else { return }
-        do {
-            try document.mappedFile.resize(to: offset)
-            document.markDirty()
-            cancelEditing()
-            if fileSize > 0 {
-                selection = .single(at: min(offset, fileSize - 1))
-            } else {
-                selection = nil
-            }
-            bumpDataRevision()
-        } catch {
-            presentError(error.localizedDescription)
+        document.truncate(to: offset)
+        document.markDirty()
+        cancelEditing()
+        if fileSize > 0 {
+            selection = .single(at: min(offset, fileSize - 1))
+        } else {
+            selection = nil
         }
+        bumpDataRevision()
     }
 
     private func registerRangeUndo(range: Range<Int>, oldValues: [UInt8], newValue: UInt8) {
@@ -928,51 +908,28 @@ final class DocumentPaneViewModel: Identifiable {
     private func registerRangeFillRedo(range: Range<Int>, oldValues: [UInt8], newValue: UInt8) {
         undoManager.registerUndo(withTarget: self) { target in
             guard let document = target.document else { return }
-            do {
-                _ = try document.mappedFile.replaceBytes(in: range, with: newValue)
-                document.markDirty()
-                target.bumpDataRevision()
-                target.registerRangeUndo(range: range, oldValues: oldValues, newValue: newValue)
-            } catch {
-                target.presentError(error.localizedDescription)
-            }
+            _ = document.replaceBytes(in: range, with: newValue)
+            document.markDirty()
+            target.bumpDataRevision()
+            target.registerRangeUndo(range: range, oldValues: oldValues, newValue: newValue)
         }
     }
 
     private func restoreRange(range: Range<Int>, values: [UInt8]) {
         guard let document, values.count == range.count else { return }
-        do {
-            for (index, offset) in range.enumerated() {
-                try document.mappedFile.replaceByte(at: offset, with: values[index])
-            }
-            document.markDirty()
-            bumpDataRevision()
-        } catch {
-            presentError(error.localizedDescription)
+        for (index, offset) in range.enumerated() {
+            _ = document.replaceByte(at: offset, with: values[index])
         }
+        document.markDirty()
+        bumpDataRevision()
     }
 
     private func applyByteChange(at offset: Int, from oldValue: UInt8, to newValue: UInt8) {
         guard let document else { return }
-        do {
-            try document.mappedFile.replaceByte(at: offset, with: newValue)
-            document.markDirty()
-            selection = .single(at: offset)
-            bumpDataRevision()
-        } catch {
-            presentError(error.localizedDescription)
-        }
-    }
-
-    private func buildFullData() -> Data {
-        guard let document else { return Data() }
-        var data = Data(count: document.fileSize)
-        for offset in 0..<document.fileSize {
-            if let byte = byte(at: offset) {
-                data[offset] = byte
-            }
-        }
-        return data
+        _ = document.replaceByte(at: offset, with: newValue)
+        document.markDirty()
+        selection = .single(at: offset)
+        bumpDataRevision()
     }
 
     private func resetComparisonMode() {

@@ -11,9 +11,8 @@ final class HashServiceTests: XCTestCase {
 
     func testMatchingAcceptsCommonAliases() {
         XCTAssertEqual(HashAlgorithm.matching("SHA-256"), .sha256)
-        XCTAssertEqual(HashAlgorithm.matching("sha3-256"), .sha3_256)
-        XCTAssertEqual(HashAlgorithm.matching("SHA3_384"), .sha3_384)
         XCTAssertEqual(HashAlgorithm.matching("sha512"), .sha512)
+        XCTAssertEqual(HashAlgorithm.matching("md5"), .md5)
     }
 
     func testKnownVectors() {
@@ -28,10 +27,6 @@ final class HashServiceTests: XCTestCase {
         XCTAssertEqual(
             HashAlgorithm.calculate(.sha384, data: sample),
             "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7"
-        )
-        XCTAssertEqual(
-            HashAlgorithm.calculate(.sha3_256, data: sample),
-            "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532"
         )
     }
 

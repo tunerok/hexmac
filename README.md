@@ -2,12 +2,13 @@
 
 ![HexMac hex editor](Img/2.png)
 
-Native macOS hex editor for inspecting, editing, and analyzing binary files. Built with SwiftUI and memory-mapped I/O for fast work with large files.
+Native macOS hex editor for inspecting, editing, and analyzing binary files. Built with SwiftUI and a HexFiend-style slice for fast work with large files.
 
 ## Features
 
 ### Hex editor
-- Memory-mapped file access — open large files without loading them entirely into RAM
+- Slice-based file access — open large files without loading them entirely into RAM
+- In-place save without temporary files; Save As streams through a bounded buffer
 - In-place byte editing with undo/redo
 - Configurable bytes per row: 8, 16, 24, or 32
 - Text column with multiple encodings: ASCII, UTF-8, UTF-16 LE/BE, Latin-1, Windows-1252, Mac Roman

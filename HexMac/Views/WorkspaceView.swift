@@ -54,7 +54,9 @@ struct WorkspaceView: View {
                 HashCalculatorView(
                     fileName: pane.hashFileName,
                     title: pane.hashTitle,
-                    inputBytes: pane.hashInputBytes
+                    inputBytes: pane.hashInputBytes,
+                    inputRange: pane.hashInputRange,
+                    bytesProvider: { range in pane.bytes(in: range) }
                 ) {
                     pane.showHashSheet = false
                 }
