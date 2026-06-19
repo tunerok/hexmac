@@ -27,23 +27,11 @@ struct CompareHexGridView: View {
                 Int((gridHeight - HexGridLayout.contentPadding) / HexGridLayout.rowHeight)
             )
 
-            VStack(spacing: 0) {
-                HStack(spacing: 0) {
-                    ScrollView(.horizontal) {
-                        VStack(alignment: .leading, spacing: 0) {
-                            pairedHeaders
-                            Divider()
-                        }
-                        .padding(.leading, HexGridLayout.contentPadding)
-                        .padding(.trailing, HexGridLayout.contentPadding)
-                    }
-                    Color.clear
-                        .frame(width: Self.scrollbarColumnWidth)
-                        .padding(.trailing, HexGridLayout.contentPadding)
-                }
-
-                HStack(spacing: 0) {
-                    ScrollView(.horizontal) {
+            HStack(spacing: 0) {
+                ScrollView(.horizontal) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        pairedHeaders
+                        Divider()
                         HexViewportScrollView(
                             firstVisibleRow: $firstVisibleRow,
                             rowCount: pane.rowCount,
@@ -83,18 +71,23 @@ struct CompareHexGridView: View {
                             }
                         )
                         .frame(height: gridHeight)
-                        .padding(.leading, HexGridLayout.contentPadding)
-                        .padding(.trailing, HexGridLayout.contentPadding)
                     }
+                    .padding(.leading, HexGridLayout.contentPadding)
+                    .padding(.trailing, HexGridLayout.contentPadding)
+                }
 
+                VStack(spacing: 0) {
+                    Color.clear
+                        .frame(height: HexGridLayout.headerTotalHeight)
                     HexVerticalScrollbar(
                         firstVisibleRow: $firstVisibleRow,
                         rowCount: pane.rowCount,
                         visibleRowCount: visibleRowCount
                     )
                     .frame(height: gridHeight)
-                    .padding(.trailing, HexGridLayout.contentPadding)
                 }
+                .frame(width: Self.scrollbarColumnWidth)
+                .padding(.trailing, HexGridLayout.contentPadding)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
