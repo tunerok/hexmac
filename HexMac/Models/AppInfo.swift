@@ -11,4 +11,7 @@ enum AppInfo {
     }
 
     static let name = "HexMac"
+    static let author = "tunerok(Artem Ashirov)"
+    static let copyrightYear = "2026"
+    static let repositoryURL = URL(string: "https://github.com/tunerok/hexmac")!
 }

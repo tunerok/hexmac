@@ -38,12 +38,23 @@ struct HelpView: View {
 
             Divider()
 
-            Text(
-                String(
-                    localized: "Version \(AppInfo.version)",
-                    comment: "Help footer version label"
+            VStack(spacing: 2) {
+                Text(
+                    String(
+                        localized: "Version \(AppInfo.version)",
+                        comment: "Help footer version label"
+                    )
                 )
-            )
+                Text(
+                    String(
+                        localized: "© \(AppInfo.copyrightYear) \(AppInfo.author)",
+                        comment: "Help footer copyright line"
+                    )
+                )
+                Link(destination: AppInfo.repositoryURL) {
+                    Text(AppInfo.repositoryURL.absoluteString)
+                }
+            }
             .font(.caption)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity)
