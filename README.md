@@ -2,6 +2,8 @@
 
 ![CI](https://github.com/tunerok/hexmac/actions/workflows/ci.yml/badge.svg)
 
+[GitHub](https://github.com/tunerok/hexmac)
+
 ![HexMac hex editor](Img/2.png)
 
 Native macOS hex editor for inspecting, editing, and analyzing binary files. Built with SwiftUI on a B+ tree byte array with file-backed slices — large files stay on disk while edits live in memory.
