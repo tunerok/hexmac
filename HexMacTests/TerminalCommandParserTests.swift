@@ -273,4 +273,245 @@ final class TerminalCommandParserTests: XCTestCase {
         }
         XCTAssertEqual(message, String(localized: "File is empty"))
     }
+
+    private func sampleBytes() -> [UInt8] {
+        [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xFF]
+    }
+
+    private func sampleProvider() -> (Range<Int>) -> [UInt8] {
+        let bytes = sampleBytes()
+        return { range in
+            Array(bytes[range])
+        }
+    }
+
+    func testXorAggregate() {
+        let result = TerminalCommandParser.execute("xor 0 3", fileSize: 8, bytesProvider: sampleProvider())
+        guard case .output(let text) = result else {
+            return XCTFail("Expected output")
+        }
+        let expected = 0x12 ^ 0x34 ^ 0x56 ^ 0x78
+        XCTAssertEqual(text, "0x\(String(format: "%02X", expected))")
+    }
+
+    func testAverage() {
+        let result = TerminalCommandParser.execute("avg 0 3", fileSize: 8, bytesProvider: sampleProvider())
+        guard case .output(let text) = result else {
+            return XCTFail("Expected output")
+        }
+        let total = UInt64(0x12 + 0x34 + 0x56 + 0x78)
+        let expected = String(format: "%.2f", Double(total) / 4.0)
+        XCTAssertEqual(text, expected)
+    }
+
+    func testMinMax() {
+        let provider = sampleProvider()
+
+        let minResult = TerminalCommandParser.execute("min 0 7", fileSize: 8, bytesProvider: provider)
+        guard case .output(let minText) = minResult else {
+            return XCTFail("Expected min output")
+        }
+        XCTAssertEqual(minText, "0x12 (18)")
+
+        let maxResult = TerminalCommandParser.execute("max 0 7", fileSize: 8, bytesProvider: provider)
+        guard case .output(let maxText) = maxResult else {
+            return XCTFail("Expected max output")
+        }
+        XCTAssertEqual(maxText, "0xFF (255)")
+    }
+
+    func testCountByte() {
+        let bytes: [UInt8] = [0x12, 0x12, 0x34, 0x12, 0x56]
+        let result = TerminalCommandParser.execute(
+            "count 0x12 0 4",
+            fileSize: bytes.count,
+            bytesProvider: { range in Array(bytes[range]) }
+        )
+        guard case .output(let text) = result else {
+            return XCTFail("Expected output")
+        }
+        XCTAssertEqual(text, "3")
+    }
+
+    func testReadU16LittleEndian() {
+        let result = TerminalCommandParser.execute("read u16 0", fileSize: 8, bytesProvider: sampleProvider())
+        guard case .output(let text) = result else {
+            return XCTFail("Expected output")
+        }
+        XCTAssertEqual(text, "0x3412 (13330)")
+    }
+
+    func testReadU16BigEndian() {
+        let result = TerminalCommandParser.execute("read u16 0 --be", fileSize: 8, bytesProvider: sampleProvider())
+        guard case .output(let text) = result else {
+            return XCTFail("Expected output")
+        }
+        XCTAssertEqual(text, "0x1234 (4660)")
+    }
+
+    func testReadU32AtOffset() {
+        let result = TerminalCommandParser.execute("read u32 0", fileSize: 8, bytesProvider: sampleProvider())
+        guard case .output(let text) = result else {
+            return XCTFail("Expected output")
+        }
+        XCTAssertEqual(text, "0x78563412 (2018915346)")
+    }
+
+    func testReadSpansPastEOF() {
+        let result = TerminalCommandParser.execute("read u32 6", fileSize: 8, bytesProvider: sampleProvider())
+        guard case .error(let message) = result else {
+            return XCTFail("Expected error")
+        }
+        XCTAssertTrue(message.contains("8"))
+    }
+
+    func testBinDump() {
+        let result = TerminalCommandParser.execute("bin 0 1", fileSize: 8, bytesProvider: sampleProvider())
+        guard case .output(let text) = result else {
+            return XCTFail("Expected output")
+        }
+        XCTAssertEqual(text, "0001001000110100")
+    }
+
+    func testAsciiDump() {
+        let bytes: [UInt8] = [0x41, 0x42, 0x07, 0x7E]
+        let result = TerminalCommandParser.execute(
+            "ascii 0 3",
+            fileSize: bytes.count,
+            bytesProvider: { range in Array(bytes[range]) }
+        )
+        guard case .output(let text) = result else {
+            return XCTFail("Expected output")
+        }
+        XCTAssertEqual(text, "AB.~")
+    }
+
+    func testHashMD5() {
+        let bytes: [UInt8] = Array("abc".utf8)
+        let result = TerminalCommandParser.execute(
+            "hash md5 0 2",
+            fileSize: bytes.count,
+            bytesProvider: { range in Array(bytes[range]) }
+        )
+        guard case .output(let text) = result else {
+            return XCTFail("Expected output")
+        }
+        XCTAssertEqual(text, "900150983cd24fb0d6963f7d28e17f72")
+    }
+
+    func testHashSHA256() {
+        let bytes: [UInt8] = Array("abc".utf8)
+        let result = TerminalCommandParser.execute(
+            "hash sha256 0 2",
+            fileSize: bytes.count,
+            bytesProvider: { range in Array(bytes[range]) }
+        )
+        guard case .output(let text) = result else {
+            return XCTFail("Expected output")
+        }
+        XCTAssertEqual(
+            text,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        )
+    }
+
+    func testCRCCustomPoly() {
+        let bytes: [UInt8] = [0x01, 0x02]
+        let result = TerminalCommandParser.execute(
+            "crc --crc16 --poly 0x8005 --init 0xFFFF --refin --refout 0 1",
+            fileSize: bytes.count,
+            bytesProvider: { _ in bytes }
+        )
+        guard case .output(let text) = result else {
+            return XCTFail("Expected output")
+        }
+
+        var configuration = CRCConfiguration.defaultConfiguration
+        configuration.algorithm = .crc16
+        configuration.setPolynomial(fromHex: "0x8005")
+        configuration.setInitialValue(fromHex: "0xFFFF")
+        configuration.refin = true
+        configuration.refout = true
+        let expected = CRCService.formattedResult(
+            CRCService.calculate(data: bytes, configuration: configuration),
+            configuration: configuration
+        )
+        XCTAssertTrue(text.hasSuffix(expected))
+    }
+
+    func testCompareLengthMismatch() {
+        let result = TerminalCommandParser.execute(
+            "cmp 0 2, 0 5",
+            fileSize: 10,
+            bytesProvider: makeProvider()
+        )
+        guard case .error(let message) = result else {
+            return XCTFail("Expected error")
+        }
+        XCTAssertEqual(message, String(localized: "Ranges have different lengths: 3 vs 6"))
+    }
+
+    func testGotoHexOffset() {
+        let result = TerminalCommandParser.execute("goto 0x10", fileSize: 32, bytesProvider: makeProvider())
+        guard case .navigate(let offset) = result else {
+            return XCTFail("Expected navigate")
+        }
+        XCTAssertEqual(offset, 16)
+    }
+
+    func testGotoOutOfBounds() {
+        let result = TerminalCommandParser.execute("goto 10", fileSize: 10, bytesProvider: makeProvider())
+        guard case .error(let message) = result else {
+            return XCTFail("Expected error")
+        }
+        XCTAssertTrue(message.contains("10"))
+        XCTAssertTrue(message.contains("file size"))
+    }
+
+    func testEmptyCommand() {
+        let result = TerminalCommandParser.execute("   ", fileSize: 10, bytesProvider: makeProvider())
+        guard case .error(let message) = result else {
+            return XCTFail("Expected error")
+        }
+        XCTAssertEqual(message, String(localized: "Empty command"))
+    }
+
+    func testUnknownCommand() {
+        let result = TerminalCommandParser.execute("foobar", fileSize: 10, bytesProvider: makeProvider())
+        guard case .error(let message) = result else {
+            return XCTFail("Expected error")
+        }
+        XCTAssertEqual(message, String(localized: "Unknown command. Type help for available commands."))
+    }
+
+    func testHexDumpExceedsLimit() {
+        let limit = BinarySelectionFormatter.maxDisplayBytes
+        let fileSize = limit + 1
+        let result = TerminalCommandParser.execute(
+            "hex 0 end",
+            fileSize: fileSize,
+            bytesProvider: { range in
+                [UInt8](repeating: 0, count: range.count)
+            }
+        )
+        guard case .error(let message) = result else {
+            return XCTFail("Expected error, got \(result)")
+        }
+        XCTAssertTrue(
+            message.contains("\(limit)") || message.localizedCaseInsensitiveContains("exceed"),
+            "Got message: \(message)"
+        )
+    }
+
+    func testSumWithMaskFilteringAll() {
+        let result = TerminalCommandParser.execute(
+            "sum 0 3 --mask 0xF0 --eq 0xA0",
+            fileSize: 8,
+            bytesProvider: sampleProvider()
+        )
+        guard case .error(let message) = result else {
+            return XCTFail("Expected error")
+        }
+        XCTAssertEqual(message, String(localized: "Empty range"))
+    }
 }
