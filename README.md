@@ -12,28 +12,31 @@ Native macOS hex editor for inspecting, editing, and analyzing binary files. Bui
 - Memory slices — open large files without loading them entirely into RAM
 - Virtual viewport scrolling with row cache, overscan, and background prefetch
 - In-place save without temporary files; Save As streams through a bounded buffer
-- In-place byte editing with undo/redo
+- New empty document and in-place byte editing with undo/redo
 - Configurable bytes per row: 8, 16, 24, or 32
 - Text column with multiple encodings: ASCII, UTF-8, UTF-16 LE/BE, Latin-1, Windows-1252, Mac Roman
 - Copy selection as hex, fill/clear selected bytes, show selection as binary
+- Save selection as raw binary (`.bin`) or hex text (`.hex`)
 - Color highlights with navigation in the Inspector panel
 - Status bar with offset, file size, bytes-per-row, and encoding controls
+- Default text encoding in **Settings** (⌘,)
 
 ### Workspace
 - Tabbed editor groups (VS Code–style layout)
 - Split panes horizontally or vertically
 - Drag-and-drop to open files
-- Side-by-side binary comparison with diff minimap and linked scrolling
+- Side-by-side binary comparison with color-coded diff, minimap, and linked scrolling
+- **Compare with…** from a tab context menu to diff against another open file
 
 ### Analysis tools
 - **Find** — search by hex pattern or ASCII text across the file or selection
 - **Hash** — MD5, SHA-1, SHA-224/256/384/512 (file or selection)
 - **CRC** — CRC-8/16/32 with 60+ industry presets (Modbus, USB, AUTOSAR, ISO-HDLC, …) and custom parameters
-- **Histogram** — byte frequency distribution for the file or selection
-- **Inspector** — offset, length, binary view, integer interpretations (LE/BE)
+- **Histogram** — byte frequency distribution for the file or selection; export as PNG or JPEG
+- **Inspector** — offset, length, binary view, integer interpretations (LE/BE, `int8_t` … `uint64_t`)
 
 ### Built-in terminal
-Scriptable command line inside each document pane. Type `help` for the full reference.
+Scriptable command line in the panel below the editor (active document pane). Disabled in comparison panes. Type `help` for the full reference.
 
 | Command | Description |
 |---------|-------------|
@@ -41,7 +44,7 @@ Scriptable command line inside each document pane. Type `help` for the full refe
 | `hex`, `bin`, `ascii` | Dump bytes in different formats |
 | `sum`, `xor`, `avg`, `min`, `max` | Byte math over ranges |
 | `len`, `count` | Length and byte frequency |
-| `read` | Read typed values at an offset |
+| `read` | Read typed values at an offset (`--le` / `--be`) |
 | `find` | Search hex or ASCII patterns |
 | `cmp` | Compare two byte ranges |
 | `crc`, `hash` | Checksums and digests |
@@ -54,6 +57,8 @@ Ranges support decimal and hex offsets, multiple segments, and sampling filters 
 - macOS 15.6 or later
 - Xcode 26 or later (Swift 5)
 
+CI runs on `macos-15` with Xcode 26.
+
 ## Build & run
 
 ```bash
@@ -64,7 +69,7 @@ open HexMac.xcodeproj
 
 In Xcode: select the **HexMac** scheme → **Run** (⌘R).
 
-Don't want to develop an app? Please check out the Releases section.
+Don't want to develop an app? Please check out the [Releases](https://github.com/tunerok/hexmac/releases) section.
 
 ### Run tests
 
@@ -75,16 +80,17 @@ xcodebuild test \
   -destination 'platform=macOS'
 ```
 
-Test coverage includes byte-array I/O, virtual scroll window, row loading, pattern search, hashing, CRC, comparison diff mapping, and the terminal command parser.
+Test coverage includes byte-array I/O, virtual scroll window, row loading and caches, pattern search, hashing, CRC, comparison diff mapping, highlight spans, histogram building, and the terminal command parser/tokenizer.
 
 ## Keyboard shortcuts
 
 | Action | Shortcut |
 |--------|----------|
+| New file | ⌘N |
 | Open file | ⌘O |
 | Save / Save As | ⌘S / ⇧⌘S |
 | Undo / Redo | ⌘Z / ⇧⌘Z |
-| Copy selection (hex) | ⌘C |
+| Copy selection as hex | ⇧⌘C |
 | Find | ⌘F |
 | Split right / down | ⌘\\ / ⇧⌘\\ |
 | Next / previous tab | ⇧⌘] / ⇧⌘[ |
@@ -95,14 +101,15 @@ Test coverage includes byte-array I/O, virtual scroll window, row loading, patte
 
 ```
 HexMac/
-├── HexMacApp.swift          # App entry point, menus
-├── Core/ByteArray/          # B+ tree, file/memory slices, chunked I/O
-├── Models/                  # Document, selection, CRC, find models
+├── HexMacApp.swift          # App entry point, menus, settings
+├── ContentView.swift        # Root layout
+├── Core/ByteArray/          # B+ tree, file/memory slices, chunked I/O, writer
+├── Models/                  # Document, selection, CRC, find, highlight models
 ├── ViewModels/              # Workspace and pane state
-├── Views/                   # SwiftUI views (grid, compare, tools)
-└── Services/                # I/O, search, hash, CRC, scroll, terminal
+├── Views/                   # SwiftUI views (grid, compare, tools, terminal)
+└── Services/                # I/O, search, hash, CRC, scroll, compare, terminal
 
-HexMacTests/                 # Unit tests
+HexMacTests/                 # Unit tests (13 suites)
 ```
 
 ## Contributing
@@ -136,4 +143,4 @@ HexMac is free software: you may redistribute and/or modify it under the terms o
 
 ![Screenshot 7](Img/7.png)
 
-![Screenshot 7](Img/8.png)
+![Screenshot 8](Img/8.png)
