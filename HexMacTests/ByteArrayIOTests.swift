@@ -7,6 +7,7 @@ import Foundation
 import Testing
 @testable import HexMac
 
+@Suite(.serialized)
 struct ByteArrayIOTests {
     @Test func fileReferenceReadsAndWrites() throws {
         let url = FileManager.default.temporaryDirectory
@@ -98,6 +99,59 @@ struct ByteArrayIOTests {
         defer { saved.close() }
         let slice = FileByteSlice(file: saved)
         #expect(slice.bytes(in: 0..<saved.length) == [0, 1, 0xFF, 3, 4])
+    }
+
+    @Test func createNewFileWritesSingleZeroByte() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HexMacNew-\(UUID().uuidString).bin")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try Data([0x00]).write(to: url)
+
+        let file = try FileReference.open(url: url, readOnly: true)
+        defer { file.close() }
+        #expect(file.length == 1)
+        #expect(try file.byteSlice(at: 0) == 0x00)
+
+        let document = try HexDocument.open(url: url, readOnly: false)
+        defer { document.close() }
+        #expect(document.fileSize == 1)
+        #expect(document.byte(at: 0) == 0x00)
+    }
+
+    @Test func saveAfterModifyWritesCorrectBytes() throws {
+        let insertURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HexMacInsert-\(UUID().uuidString).bin")
+        defer { try? FileManager.default.removeItem(at: insertURL) }
+
+        try Data([0, 1, 2, 3]).write(to: insertURL)
+        let insertFile = try FileReference.open(url: insertURL, readOnly: false)
+        let insertArray = BTreeByteArray.fromFile(insertFile)
+        insertArray.insert(slice: MemoryByteSlice(data: Data([0xAA])), at: 2)
+        try ByteArrayWriter.write(insertArray, to: insertURL)
+        #expect(try Data(contentsOf: insertURL) == Data([0, 1, 0xAA, 2, 3]))
+
+        let appendURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HexMacAppend-\(UUID().uuidString).bin")
+        defer { try? FileManager.default.removeItem(at: appendURL) }
+
+        try Data([0x10, 0x20]).write(to: appendURL)
+        let appendFile = try FileReference.open(url: appendURL, readOnly: false)
+        let appendArray = BTreeByteArray.fromFile(appendFile)
+        appendArray.insert(slice: MemoryByteSlice(data: Data([0xDD, 0xEE])), at: appendArray.length)
+        try ByteArrayWriter.write(appendArray, to: appendURL)
+        #expect(try Data(contentsOf: appendURL) == Data([0x10, 0x20, 0xDD, 0xEE]))
+
+        let deleteURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HexMacDelete-\(UUID().uuidString).bin")
+        defer { try? FileManager.default.removeItem(at: deleteURL) }
+
+        try Data([0, 1, 2, 3, 4]).write(to: deleteURL)
+        let deleteFile = try FileReference.open(url: deleteURL, readOnly: false)
+        let deleteArray = BTreeByteArray.fromFile(deleteFile)
+        deleteArray.delete(range: 1..<3)
+        try ByteArrayWriter.write(deleteArray, to: deleteURL)
+        #expect(try Data(contentsOf: deleteURL) == Data([0, 3, 4]))
     }
 }
 

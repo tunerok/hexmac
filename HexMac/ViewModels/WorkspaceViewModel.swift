@@ -71,6 +71,15 @@ final class WorkspaceViewModel {
 
     // MARK: - Open
 
+    func newFile() {
+        do {
+            guard let url = try FileAccessService.createNewFile() else { return }
+            openFile(from: url)
+        } catch {
+            presentError(error.localizedDescription)
+        }
+    }
+
     func openFilePanel() {
         guard let url = FileAccessService.openFilePanel() else { return }
         openFile(from: url)

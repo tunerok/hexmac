@@ -47,7 +47,12 @@ struct HexMacApp: App {
 
     @CommandsBuilder
     private var fileMenuCommands: some Commands {
-        CommandGroup(replacing: .newItem) {}
+        CommandGroup(replacing: .newItem) {
+            Button(String(localized: "New")) {
+                workspace.newFile()
+            }
+            .keyboardShortcut("n", modifiers: .command)
+        }
 
         CommandGroup(after: .newItem) {
             Button(String(localized: "Open…")) {

@@ -15,7 +15,7 @@ struct ContentView: View {
             if workspace.hasOpenPanes {
                 WorkspaceView(workspace: workspace)
             } else {
-                EmptyStateView(onOpen: workspace.openFilePanel)
+                EmptyStateView(onOpen: workspace.openFilePanel, onNew: workspace.newFile)
             }
         }
         .frame(minWidth: 792, minHeight: 480)

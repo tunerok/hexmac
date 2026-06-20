@@ -299,25 +299,31 @@ private final class InternalFileOperation {
     }
 
     func write(to file: FileReference, tracker: inout ByteArrayWriteProgress) throws {
-        var buffer = [UInt8](repeating: 0, count: ByteArrayWriter.chunkSize)
+        let totalLength = Int(slice.length)
+        var buffer = [UInt8](repeating: 0, count: totalLength)
+        slice.copyBytes(
+            into: buffer.withUnsafeMutableBytes { $0.baseAddress! },
+            range: 0..<slice.length
+        )
 
+        var bufferOffset: UInt64 = 0
         for target in remainingTargets {
             var written: UInt64 = 0
             let length = target.upperBound - target.lowerBound
             while written < length {
                 if tracker.isCancelled { return }
                 let toWrite = Int(min(UInt64(ByteArrayWriter.chunkSize), length - written))
-                let sourceOffset = sourceRange.lowerBound + written
-                slice.copyBytes(
-                    into: buffer.withUnsafeMutableBytes { $0.baseAddress! },
-                    range: sourceOffset..<(sourceOffset + UInt64(toWrite))
-                )
                 try buffer.withUnsafeBytes { raw in
-                    try file.write(from: raw.baseAddress!, length: toWrite, to: target.lowerBound + written)
+                    try file.write(
+                        from: raw.baseAddress!.advanced(by: Int(bufferOffset + written)),
+                        length: toWrite,
+                        to: target.lowerBound + written
+                    )
                 }
                 written += UInt64(toWrite)
                 tracker.completed += UInt64(toWrite) * 2
             }
+            bufferOffset += length
         }
     }
 }

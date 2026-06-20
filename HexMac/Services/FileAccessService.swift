@@ -23,6 +23,13 @@ enum FileAccessService {
     }
 
     @MainActor
+    static func createNewFile() throws -> URL? {
+        guard let url = saveFilePanel(suggestedName: "Untitled.bin") else { return nil }
+        try Data([0x00]).write(to: url)
+        return url
+    }
+
+    @MainActor
     static func saveFilePanel(suggestedName: String, fileExtension: String? = nil) -> URL? {
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
