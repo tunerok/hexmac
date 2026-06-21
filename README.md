@@ -10,34 +10,20 @@ Native macOS hex editor for inspecting, editing, and analyzing binary files. Bui
 
 ## Features
 
-### Hex editor
-- Memory slices — open large files without loading them entirely into RAM
-- Virtual viewport scrolling with row cache, overscan, and background prefetch
-- In-place save without temporary files; Save As streams through a bounded buffer
-- New empty document and in-place byte editing with undo/redo
-- Configurable bytes per row: 8, 16, 24, or 32
-- Text column with multiple encodings: ASCII, UTF-8, UTF-16 LE/BE, Latin-1, Windows-1252, Mac Roman
-- Copy selection as hex, fill/clear selected bytes, show selection as binary
-- Save selection as raw binary (`.bin`) or hex text (`.hex`)
-- Color highlights with navigation in the Inspector panel
-- Status bar with offset, file size, bytes-per-row, and encoding controls
-- Default text encoding in **Settings** (⌘,)
+Hex editor:
+- Large files without RAM load.
+- Edit, undo/redo, adjustable view (width, encodings).
+- Copy, fill, clear, export selection.
+- Highlights, inspector, status bar, settings.
 
-### Workspace
-- Tabbed editor groups (VS Code–style layout)
-- Split panes horizontally or vertically
-- Drag-and-drop to open files
-- Side-by-side binary comparison with color-coded diff, minimap, linked scrolling, and diff navigation (F3 / ⇧F3)
-- **Compare with…** — **Tools** menu or tab context menu; active file is the left side
-- **Inspector → Comparison** — scan progress, diff region count, current offset, Previous / Next
+Workspace:
+- Tabs, split panes, drag-and-drop.
+- Side-by-side compare with highlights, sync scroll, diff navigation.
 
-### Analysis tools
-- **Find** — search by hex pattern or ASCII text (entire file or selection); background scan with progress on large files
-- **Inspector → Find Results** — browse and navigate matches after closing the Find panel (Previous / Next, Clear)
-- **Hash** — MD5, SHA-1, SHA-224/256/384/512 (file or selection)
-- **CRC** — CRC-8/16/32 with 60+ industry presets (Modbus, USB, AUTOSAR, ISO-HDLC, …) and custom parameters
-- **Histogram** — byte frequency distribution for the file or selection; export as PNG or JPEG
-- **Inspector** — offset, length, binary view, integer interpretations (LE/BE, `int8_t` … `uint64_t`); Find Results and Comparison sections when a search or diff is active
+Analysis:
+- Search HEX/text with progress, save results.
+- Hashes (MD5, SHA, CRC), histogram with export.
+- Inspector with offset, length, binary view, integer decoding, search/diff results.
 
 ### Built-in terminal
 Scriptable command line in the panel below the editor (active document pane). Disabled in comparison panes. Type `help` for the full reference.
