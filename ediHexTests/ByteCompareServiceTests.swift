@@ -920,4 +920,94 @@ final class ByteCompareServiceTests: XCTestCase {
         )
         XCTAssertEqual(nextFromChunkBoundary, chunkSize + 2)
     }
+
+    func testSizeOnlyTailProducesSingleRegion() {
+        let chunkSize = 64
+        let left = Array(repeating: UInt8(0xAB), count: 80)
+        let right = Array(repeating: UInt8(0xAB), count: 200)
+
+        let regions = ByteCompareService.buildDiffRegionsIncremental(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) },
+            chunkSize: chunkSize
+        )
+
+        XCTAssertEqual(regions.count, 1)
+        XCTAssertEqual(regions[0].start, left.count)
+        XCTAssertEqual(regions[0].end, right.count - 1)
+        XCTAssertEqual(regions[0].leftKind, .equal)
+        XCTAssertEqual(regions[0].rightKind, .added)
+    }
+
+    func testCoalesceSizeOnlyTailMergesAdjacentTailRegions() {
+        let regions = [
+            DiffRegion(start: 80, end: 127, leftKind: .equal, rightKind: .added),
+            DiffRegion(start: 128, end: 199, leftKind: .equal, rightKind: .added),
+        ]
+
+        let coalesced = ByteCompareService.coalesceSizeOnlyTail(
+            regions: regions,
+            leftSize: 80,
+            rightSize: 200
+        )
+
+        XCTAssertEqual(coalesced.count, 1)
+        XCTAssertEqual(coalesced[0].start, 80)
+        XCTAssertEqual(coalesced[0].end, 199)
+    }
+
+    func testDiffRegionBoundsSpansFullTail() {
+        let left = Array(repeating: UInt8(0x00), count: 80)
+        let right = Array(repeating: UInt8(0x00), count: 200)
+        let chunkSize = 64
+
+        let bounds = ByteCompareService.diffRegionBounds(
+            containing: 150,
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) },
+            chunkSize: chunkSize
+        )
+
+        XCTAssertEqual(bounds?.start, left.count)
+        XCTAssertEqual(bounds?.end, right.count - 1)
+    }
+
+    func testFindNextDiffOffsetSkipsEntireTail() {
+        let chunkSize = 64
+        let left = Array(repeating: UInt8(0x00), count: 80)
+        let right = Array(repeating: UInt8(0x00), count: 200)
+
+        let index = ByteCompareService.buildDiffChunkIndexIncremental(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) },
+            bucketCount: 4,
+            chunkSize: chunkSize
+        )
+
+        let nextFromOverlap = ByteCompareService.findNextDiffOffset(
+            after: left.count - 1,
+            chunkIndex: index,
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) }
+        )
+        XCTAssertEqual(nextFromOverlap, left.count)
+
+        let nextFromTailMiddle = ByteCompareService.findNextDiffOffset(
+            after: 150,
+            chunkIndex: index,
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) }
+        )
+        XCTAssertNil(nextFromTailMiddle)
+    }
 }

@@ -85,7 +85,8 @@ struct HelpView: View {
         HelpSection(title: String(localized: "Workspace")) {
             HelpBullet(String(localized: "View → Split Right (⌘\\) or Split Down (⇧⌘\\) to open a second editor group."))
             HelpBullet(String(localized: "Use tabs to switch between open files. ⇧⌘] and ⇧⌘[ move to the next or previous tab."))
-            HelpBullet(String(localized: "Tools → Compare… opens a side-by-side diff with a minimap."))
+            HelpBullet(String(localized: "Tools → Compare… picks two files for a side-by-side diff with a minimap."))
+            HelpBullet(String(localized: "Tools → Compare with… uses the active file as the left side and prompts for a second file."))
             HelpBullet(String(localized: "Right-click a tab and choose Compare with… to diff against another open file."))
             HelpBullet(String(localized: "In compare mode, use F3 and ⇧F3 to jump to the next or previous difference. The Inspector shows diff navigation controls."))
         }

@@ -6,8 +6,10 @@
 import Foundation
 
 enum AppInfo {
+    static let marketingVersion = "0.2a"
+
     static var version: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? marketingVersion
     }
 
     static let name = "ediHex"

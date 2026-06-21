@@ -341,7 +341,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				MARKETING_VERSION = 0.1;
+				MARKETING_VERSION = 0.2a;
 				PRODUCT_BUNDLE_IDENTIFIER = tunerok.ediHex;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -390,7 +390,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
-				MARKETING_VERSION = 0.1;
+				MARKETING_VERSION = 0.2a;
 				PRODUCT_BUNDLE_IDENTIFIER = tunerok.ediHex;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;

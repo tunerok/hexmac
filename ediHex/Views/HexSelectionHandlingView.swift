@@ -14,6 +14,8 @@ struct HexSelectionHandlingView: NSViewRepresentable {
     let editingOffset: Int?
     let selection: HexSelection?
     let isReadOnly: Bool
+    let focusRequestID: Int
+    let shouldAcceptFocus: Bool
     let onBeginSelection: (Int, Bool) -> Void
     let onUpdateSelection: (Int) -> Void
     let onEndSelection: (Int) -> Void
@@ -40,6 +42,8 @@ struct HexSelectionHandlingView: NSViewRepresentable {
         editingOffset: Int?,
         selection: HexSelection?,
         isReadOnly: Bool = false,
+        focusRequestID: Int = 0,
+        shouldAcceptFocus: Bool = false,
         onBeginSelection: @escaping (Int, Bool) -> Void,
         onUpdateSelection: @escaping (Int) -> Void,
         onEndSelection: @escaping (Int) -> Void,
@@ -65,6 +69,8 @@ struct HexSelectionHandlingView: NSViewRepresentable {
         self.editingOffset = editingOffset
         self.selection = selection
         self.isReadOnly = isReadOnly
+        self.focusRequestID = focusRequestID
+        self.shouldAcceptFocus = shouldAcceptFocus
         self.onBeginSelection = onBeginSelection
         self.onUpdateSelection = onUpdateSelection
         self.onEndSelection = onEndSelection
@@ -93,6 +99,7 @@ struct HexSelectionHandlingView: NSViewRepresentable {
     func updateNSView(_ nsView: HexSelectionMouseView, context: Context) {
         context.coordinator.parent = self
         nsView.coordinator = context.coordinator
+        context.coordinator.requestFocusIfNeeded(for: nsView)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -102,9 +109,38 @@ struct HexSelectionHandlingView: NSViewRepresentable {
     final class Coordinator: NSObject {
         var parent: HexSelectionHandlingView
         private var isDragging = false
+        var lastAppliedFocusRequestID = -1
 
         init(parent: HexSelectionHandlingView) {
             self.parent = parent
+        }
+
+        func requestFocusIfNeeded(for view: HexSelectionMouseView) {
+            guard parent.shouldAcceptFocus else { return }
+
+            let requestID = parent.focusRequestID
+            guard lastAppliedFocusRequestID != requestID else { return }
+
+            DispatchQueue.main.async { [weak self, weak view] in
+                guard let self, let view else { return }
+                guard self.lastAppliedFocusRequestID != requestID else { return }
+                guard let window = view.window, window.isKeyWindow else { return }
+                guard !Self.isTextInputFirstResponder(in: window) else { return }
+
+                self.lastAppliedFocusRequestID = requestID
+                window.makeFirstResponder(view)
+            }
+        }
+
+        private static func isTextInputFirstResponder(in window: NSWindow) -> Bool {
+            guard let responder = window.firstResponder else { return false }
+            if responder is NSTextView || responder is NSTextField || responder is NSSecureTextField {
+                return true
+            }
+            if let view = responder as? NSView, view is NSTextView || view is NSTextField {
+                return true
+            }
+            return false
         }
 
         func offset(at point: CGPoint) -> Int? {
@@ -329,6 +365,11 @@ final class HexSelectionMouseView: NSView {
     override var isFlipped: Bool { true }
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        coordinator?.requestFocusIfNeeded(for: self)
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let localPoint = convert(point, from: superview)

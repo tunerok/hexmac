@@ -157,6 +157,7 @@ final class WorkspaceViewModel {
                 group.activePaneID = id
             }
         }
+        findPane(id: id)?.requestEditorFocus()
     }
 
     func activateGroup(id: UUID) {
@@ -520,17 +521,15 @@ final class WorkspaceViewModel {
     // MARK: - Compare
 
     func startCompare() {
-        let panes = openDocumentPanes()
-        switch panes.count {
-        case 0:
-            pickTwoFilesForCompare()
-        case 1:
-            guard let leftURL = panes[0].document?.url else { return }
-            pickSecondFileAndCompare(left: leftURL)
-        default:
-            comparePickerPresetLeftPaneID = panes.first { $0.id == activePaneID }?.id ?? panes[0].id
-            showComparePicker = true
-        }
+        pickTwoFilesForCompare()
+    }
+
+    func compareWithActiveFile() {
+        guard let pane = activePane,
+              pane.isDocumentOpen,
+              !pane.isComparisonPane,
+              let leftURL = pane.document?.url else { return }
+        pickSecondFileAndCompare(left: leftURL)
     }
 
     func beginCompare(with sourcePaneID: UUID) {

@@ -1,4 +1,4 @@
-# ediHex **0.1**
+# ediHex **0.2a**
 
 ![CI](https://github.com/tunerok/edihex/actions/workflows/ci.yml/badge.svg)
 

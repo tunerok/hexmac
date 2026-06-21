@@ -250,6 +250,40 @@ struct DocumentPaneViewModelCompareNavigationTests {
         #expect(pane.comparisonCurrentDiffOffset == 6)
     }
 
+    @Test func diffNavigationSizeOnlyTail() async throws {
+        ensureTestApplication()
+
+        let chunkSize = 64
+        let left = Array(repeating: UInt8(0xAB), count: 80)
+        let right = Array(repeating: UInt8(0xAB), count: 200)
+
+        let leftURL = try makeTempFile(Data(left))
+        let rightURL = try makeTempFile(Data(right))
+        defer {
+            try? FileManager.default.removeItem(at: leftURL)
+            try? FileManager.default.removeItem(at: rightURL)
+        }
+
+        let pane = DocumentPaneViewModel()
+        pane.loadComparison(left: leftURL, right: rightURL)
+
+        try await waitForDiffMapCompletion(pane)
+
+        #expect(pane.comparisonDiffCount == 1)
+        #expect(pane.comparisonDiffRegions[0].start == left.count)
+        #expect(pane.comparisonDiffRegions[0].end == right.count - 1)
+        #expect(pane.comparisonDiffRegions[0].rightKind == .added)
+
+        #expect(pane.navigateToNextDiff())
+        #expect(pane.comparisonCurrentDiffOffset == left.count)
+
+        #expect(pane.navigateToNextDiff())
+        #expect(pane.comparisonCurrentDiffOffset == left.count)
+
+        #expect(pane.navigateToPreviousDiff())
+        #expect(pane.comparisonCurrentDiffOffset == left.count)
+    }
+
     private func diffGlobalOffset(in pane: DocumentPaneViewModel, row: Int) -> Int? {
         let context = pane.comparisonRowContext(for: row)
         guard let column = context.leftDiffSpans?.first?.startColumn else { return nil }

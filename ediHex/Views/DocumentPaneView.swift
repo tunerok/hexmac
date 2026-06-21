@@ -44,6 +44,8 @@ struct DocumentPaneView: View {
             scrollRevealOffset: pane.scrollRevealOffset,
             editingHexText: pane.editingHexText,
             textEncoding: pane.textEncoding,
+            focusRequestID: pane.editorFocusRequestID,
+            shouldAcceptFocus: workspace.activePaneID == pane.id,
             highlights: pane.highlights,
             highlightColor: { pane.highlight(at: $0) },
             rowBytes: { pane.rowBytes(for: $0) },

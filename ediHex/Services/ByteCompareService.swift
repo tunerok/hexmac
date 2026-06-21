@@ -575,7 +575,71 @@ enum ByteCompareService {
             onChunk?(regions, Double(cursor) / Double(total))
         }
 
-        return regions
+        let coalesced = coalesceSizeOnlyTail(
+            regions: regions,
+            leftSize: leftSize,
+            rightSize: rightSize
+        )
+        onChunk?(coalesced, 1)
+        return coalesced
+    }
+
+    nonisolated static func coalesceSizeOnlyTail(
+        regions: [DiffRegion],
+        leftSize: Int,
+        rightSize: Int
+    ) -> [DiffRegion] {
+        guard leftSize != rightSize else { return regions }
+
+        let overlap = min(leftSize, rightSize)
+        let totalEnd = max(leftSize, rightSize) - 1
+        guard overlap <= totalEnd else { return regions }
+
+        let tailLeftKind: DiffRegionKind = leftSize > rightSize ? .deleted : .equal
+        let tailRightKind: DiffRegionKind = rightSize > leftSize ? .added : .equal
+
+        var result: [DiffRegion] = []
+        result.reserveCapacity(regions.count)
+        var tailStart: Int?
+        var tailEnd: Int?
+
+        for region in regions {
+            let isTail = region.start >= overlap
+                && region.leftKind == tailLeftKind
+                && region.rightKind == tailRightKind
+
+            if isTail {
+                if tailStart == nil {
+                    tailStart = max(region.start, overlap)
+                    tailEnd = region.end
+                } else {
+                    tailEnd = region.end
+                }
+            } else {
+                if let start = tailStart, let end = tailEnd {
+                    result.append(DiffRegion(
+                        start: start,
+                        end: end,
+                        leftKind: tailLeftKind,
+                        rightKind: tailRightKind
+                    ))
+                    tailStart = nil
+                    tailEnd = nil
+                }
+                result.append(region)
+            }
+        }
+
+        if let start = tailStart, let end = tailEnd {
+            result.append(DiffRegion(
+                start: start,
+                end: end,
+                leftKind: tailLeftKind,
+                rightKind: tailRightKind
+            ))
+        }
+
+        return result
     }
 
     nonisolated static func buildDiffIndexIncremental(
@@ -791,6 +855,14 @@ enum ByteCompareService {
     ) -> (start: Int, end: Int)? {
         let total = max(leftSize, rightSize)
         guard offset >= 0, offset < total else { return nil }
+
+        if leftSize != rightSize {
+            let overlap = min(leftSize, rightSize)
+            let totalEnd = total - 1
+            if offset >= overlap {
+                return (overlap, totalEnd)
+            }
+        }
 
         let chunkStart = (offset / chunkSize) * chunkSize
         let chunkEnd = min(total, chunkStart + chunkSize)

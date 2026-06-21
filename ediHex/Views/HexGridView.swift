@@ -20,6 +20,8 @@ struct HexGridView: View {
     let editingHexText: String
     let textEncoding: TextEncodingMode
     let isReadOnly: Bool
+    let focusRequestID: Int
+    let shouldAcceptFocus: Bool
     let highlights: [HexHighlight]
     let linkedScrollRow: Binding<Int?>?
     let onVisibleRowChanged: ((Int) -> Void)?
@@ -66,6 +68,8 @@ struct HexGridView: View {
         editingHexText: String,
         textEncoding: TextEncodingMode,
         isReadOnly: Bool = false,
+        focusRequestID: Int = 0,
+        shouldAcceptFocus: Bool = false,
         highlights: [HexHighlight] = [],
         linkedScrollRow: Binding<Int?>? = nil,
         onVisibleRowChanged: ((Int) -> Void)? = nil,
@@ -104,6 +108,8 @@ struct HexGridView: View {
         self.editingHexText = editingHexText
         self.textEncoding = textEncoding
         self.isReadOnly = isReadOnly
+        self.focusRequestID = focusRequestID
+        self.shouldAcceptFocus = shouldAcceptFocus
         self.highlights = highlights
         self.linkedScrollRow = linkedScrollRow
         self.onVisibleRowChanged = onVisibleRowChanged
@@ -230,6 +236,8 @@ struct HexGridView: View {
                     editingOffset: editingOffset,
                     selection: selection,
                     isReadOnly: isReadOnly,
+                    focusRequestID: focusRequestID,
+                    shouldAcceptFocus: shouldAcceptFocus,
                     onBeginSelection: onBeginSelection,
                     onUpdateSelection: onUpdateSelection,
                     onEndSelection: onEndSelection,

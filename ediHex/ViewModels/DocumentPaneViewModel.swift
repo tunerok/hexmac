@@ -78,6 +78,7 @@ final class DocumentPaneViewModel: Identifiable {
     @ObservationIgnored private var documentRowLoadGeneration = 0
     private(set) var documentRowRevision = 0
     private(set) var scrollSessionID = 0
+    private(set) var editorFocusRequestID = 0
     @ObservationIgnored private var comparisonRowLoadTask: Task<Void, Never>?
     @ObservationIgnored private var comparisonRowLoadGeneration = 0
 
@@ -195,10 +196,15 @@ final class DocumentPaneViewModel: Identifiable {
             editingAppendedByte = false
             undoManager.removeAllActions()
             scrollSessionID &+= 1
+            requestEditorFocus()
             bumpDataRevision()
         } catch {
             presentError(error.localizedDescription)
         }
+    }
+
+    func requestEditorFocus() {
+        editorFocusRequestID &+= 1
     }
 
     func loadComparison(left leftURL: URL, right rightURL: URL) {
@@ -251,6 +257,8 @@ final class DocumentPaneViewModel: Identifiable {
         comparisonDiffChunkIndex = nil
         comparisonDiffRegions = []
         comparisonCurrentDiffOffset = nil
+        canNavigatePreviousDiff = false
+        canNavigateNextDiff = false
 
         let leftArray = left.byteArray
         let rightArray = right.byteArray
@@ -448,6 +456,12 @@ final class DocumentPaneViewModel: Identifiable {
     }
 
     private func refreshDiffNavigationState() {
+        guard !isDiffMapLoading else {
+            canNavigatePreviousDiff = false
+            canNavigateNextDiff = false
+            return
+        }
+
         let hasDifferences = !comparisonDiffRegions.isEmpty
             || (comparisonDiffChunkIndex?.hasDifferences ?? false)
         guard hasDifferences else {

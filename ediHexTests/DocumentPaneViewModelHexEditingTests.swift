@@ -105,7 +105,7 @@ struct DocumentPaneViewModelHexEditingTests {
     }
 
     @Test func repeatedSameValuePairsAdvanceThroughBytes() throws {
-        let (pane, url) = try makePaneWithFile(Data([0x11, 0x11, 0x22, 0x33]))
+        let (pane, url) = try makePaneWithFile(Data([0x11, 0x11, 0x11, 0x33]))
         defer { try? FileManager.default.removeItem(at: url) }
 
         pane.beginSelection(at: 0)
@@ -117,7 +117,7 @@ struct DocumentPaneViewModelHexEditingTests {
 
         #expect(pane.byte(at: 0) == 0x11)
         #expect(pane.byte(at: 1) == 0x11)
-        #expect(pane.byte(at: 2) == 0x22)
+        #expect(pane.byte(at: 2) == 0x11)
         #expect(!pane.isDirty)
         #expect(pane.selection?.start == 3)
         #expect(pane.editingOffset == 3)

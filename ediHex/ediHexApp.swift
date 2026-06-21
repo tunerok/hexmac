@@ -234,6 +234,11 @@ struct ediHexApp: App {
                 workspace.startCompare()
             }
 
+            Button(String(localized: "Compare with…")) {
+                workspace.compareWithActiveFile()
+            }
+            .disabled(!workspace.isDocumentOpen || workspace.isComparisonPane)
+
             Divider()
 
             Button(String(localized: "Calculate CRC…")) {
