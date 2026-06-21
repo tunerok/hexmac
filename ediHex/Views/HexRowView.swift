@@ -170,7 +170,11 @@ struct HexRowView: View, Equatable {
         for column in 0..<bytesPerRow {
             let offset = rowOffset + column
             if offset < fileSize, column < bytes.count {
-                parts.append(HexFormatter.hexPair(for: bytes[column]))
+                if column == editingColumn {
+                    parts.append("  ")
+                } else {
+                    parts.append(HexFormatter.hexPair(for: bytes[column]))
+                }
             } else {
                 parts.append("  ")
             }

@@ -104,8 +104,8 @@ struct HexEditingCellOverlay: View {
             .foregroundStyle(Color.accentColor)
             .frame(width: HexGridLayout.cellWidth)
             .padding(.vertical, 1)
-            .background(Color.accentColor.opacity(0.2))
-            .cornerRadius(2)
+            .background(.background, in: RoundedRectangle(cornerRadius: 2))
+            .background(Color.accentColor.opacity(0.2), in: RoundedRectangle(cornerRadius: 2))
             .overlay {
                 RoundedRectangle(cornerRadius: 2)
                     .strokeBorder(Color.accentColor, lineWidth: 1)
