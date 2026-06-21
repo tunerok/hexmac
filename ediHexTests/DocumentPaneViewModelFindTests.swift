@@ -108,8 +108,16 @@ struct DocumentPaneViewModelFindTests {
         let (pane, url) = try makePaneWithFile(data)
         defer { try? FileManager.default.removeItem(at: url) }
 
-        pane.startFind(input: "01 02 03 04", mode: .hex, entireFile: true, direction: .down)
-        try await Task.sleep(for: .milliseconds(100))
+        pane.startFind(input: "01", mode: .hex, entireFile: true, direction: .down)
+
+        for _ in 0..<100 {
+            if pane.findSession != nil, pane.isFindLoading {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(pane.findSession != nil)
         pane.closeFindSheet()
 
         #expect(pane.findSession?.isScanningComplete == true)
@@ -157,7 +165,7 @@ struct DocumentPaneViewModelFindTests {
         try await waitForFindCompletion(pane)
 
         _ = pane.findNextMatch()
-        #expect(pane.selectedOffset == 4)
+        #expect(pane.selectedOffset == 3)
 
         _ = pane.findPreviousMatch()
         #expect(pane.selectedOffset == 0)

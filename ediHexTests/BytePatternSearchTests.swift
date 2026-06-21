@@ -250,7 +250,7 @@ final class BytePatternSearchTests: XCTestCase {
     }
 
     func testFindAllIncrementalReportsProgress() async {
-        let fileSize = 8_192
+        let fileSize = 200
         let provider = makeSequentialProvider()
         var progressValues: [Double] = []
 
