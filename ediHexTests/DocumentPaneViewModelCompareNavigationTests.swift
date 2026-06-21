@@ -249,4 +249,54 @@ struct DocumentPaneViewModelCompareNavigationTests {
         #expect(pane.navigateToPreviousDiff())
         #expect(pane.comparisonCurrentDiffOffset == 6)
     }
+
+    private func diffGlobalOffset(in pane: DocumentPaneViewModel, row: Int) -> Int? {
+        let context = pane.comparisonRowContext(for: row)
+        guard let column = context.leftDiffSpans?.first?.startColumn else { return nil }
+        return HexFormatter.rowOffset(for: row, bytesPerRow: pane.bytesPerRow.rawValue) + column
+    }
+
+    @Test func compareDisplaySurvivesBytesPerRowChange() async throws {
+        ensureTestApplication()
+
+        let fileSize = 0x13EF08
+        let diffOffset = fileSize - 1
+        var left = Array(repeating: UInt8(0x00), count: fileSize)
+        var right = Array(repeating: UInt8(0x00), count: fileSize)
+        right[diffOffset] = 0xFF
+
+        let leftURL = try makeTempFile(Data(left))
+        let rightURL = try makeTempFile(Data(right))
+        defer {
+            try? FileManager.default.removeItem(at: leftURL)
+            try? FileManager.default.removeItem(at: rightURL)
+        }
+
+        let pane = DocumentPaneViewModel()
+        pane.loadComparison(left: leftURL, right: rightURL)
+
+        try await waitForDiffMapCompletion(pane)
+
+        #expect(pane.navigateToNextDiff())
+        #expect(pane.comparisonCurrentDiffOffset == diffOffset)
+        await pane.awaitComparisonRowLoad()
+
+        for setting in [BytesPerRowSetting.eight, .sixteen, .twentyFour, .thirtyTwo] {
+            pane.setBytesPerRow(setting)
+            #expect(pane.comparisonCurrentDiffOffset == diffOffset)
+
+            let lastRow = pane.rowCount - 1
+            await pane.loadComparisonRows(
+                around: lastRow,
+                radius: 0,
+                force: true
+            )
+            #expect(pane.comparisonRowBytes(for: lastRow, side: .right).last == 0xFF)
+            let context = pane.comparisonRowContext(for: lastRow)
+            #expect(!context.leftBytes.isEmpty)
+            #expect(!context.rightBytes.isEmpty)
+            #expect(context.leftDiffSpans != nil)
+            #expect(diffGlobalOffset(in: pane, row: lastRow) == diffOffset, "bpr=\(setting.rawValue)")
+        }
+    }
 }

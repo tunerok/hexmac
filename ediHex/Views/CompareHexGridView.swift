@@ -164,7 +164,7 @@ struct CompareHexGridView: View {
             .equatable()
         }
         .frame(width: Self.pairedDataWidth(bytesPerRow: pane.bytesPerRow.rawValue), alignment: .leading)
-        .id("\(rowIndex)-\(rowDataRevision)-\(pane.compareRowRevision(for: rowIndex))")
+        .id("\(rowIndex)-\(pane.bytesPerRow.rawValue)-\(rowDataRevision)-\(pane.compareRowRevision(for: rowIndex))")
     }
 
     private func scheduleMinimapRangeUpdate(_ range: ClosedRange<Int>) {
