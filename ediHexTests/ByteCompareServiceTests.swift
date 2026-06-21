@@ -441,4 +441,303 @@ final class ByteCompareServiceTests: XCTestCase {
         XCTAssertEqual(map.totalBytes, right.count)
         XCTAssertTrue(map.rightKinds.contains(.added))
     }
+
+    func testChunkHashFindsSingleByteDiffInLargeFile() {
+        let chunkSize = 1024
+        let fileSize = 100 * chunkSize
+        var left = Array(repeating: UInt8(0x00), count: fileSize)
+        var right = Array(repeating: UInt8(0x00), count: fileSize)
+        let diffOffset = 50 * chunkSize + 17
+        left[diffOffset] = 0x01
+        right[diffOffset] = 0x02
+
+        let index = ByteCompareService.buildDiffChunkIndexIncremental(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) },
+            bucketCount: 400,
+            chunkSize: chunkSize
+        )
+
+        XCTAssertEqual(index.diffChunkStarts, [50 * chunkSize])
+        XCTAssertTrue(index.map.leftKinds.contains(.changed))
+        XCTAssertTrue(index.map.rightKinds.contains(.changed))
+    }
+
+    func testChunkHashIdenticalLargeFilesHaveEmptyDiffChunks() {
+        let chunkSize = 1024
+        let fileSize = 1024 * chunkSize
+        let data = Array(repeating: UInt8(0xAB), count: fileSize)
+
+        let index = ByteCompareService.buildDiffChunkIndexIncremental(
+            leftSize: data.count,
+            rightSize: data.count,
+            leftBytes: { range in Array(data[range]) },
+            rightBytes: { range in Array(data[range]) },
+            bucketCount: 400,
+            chunkSize: chunkSize
+        )
+
+        XCTAssertTrue(index.diffChunkStarts.isEmpty)
+        XCTAssertFalse(index.map.leftKinds.contains(where: { $0 != .equal }))
+    }
+
+    func testChunkHashUnequalSizesMarksTailChunks() {
+        let chunkSize = 64
+        let left = Array(repeating: UInt8(0x00), count: 80)
+        let right = Array(repeating: UInt8(0x00), count: 200)
+
+        let index = ByteCompareService.buildDiffChunkIndexIncremental(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) },
+            bucketCount: 4,
+            chunkSize: chunkSize
+        )
+
+        XCTAssertFalse(index.diffChunkStarts.isEmpty)
+        XCTAssertTrue(index.map.rightKinds.contains(.added))
+    }
+
+    func testFindNextDiffOffsetSkipsLargeGap() {
+        let chunkSize = 64
+        let left = Array(repeating: UInt8(0x00), count: 512)
+        var right = Array(repeating: UInt8(0x00), count: 512)
+        right[0] = 0xFF
+        right[400] = 0xFF
+
+        let index = ByteCompareService.buildDiffChunkIndexIncremental(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) },
+            bucketCount: 8,
+            chunkSize: chunkSize
+        )
+
+        let next = ByteCompareService.findNextDiffOffset(
+            after: 0,
+            chunkIndex: index,
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) }
+        )
+
+        XCTAssertEqual(next, 400)
+    }
+
+    func testFindNextDiffOffsetFindsSecondDiffInSameChunk() {
+        let left: [UInt8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        let right: [UInt8] = [0x00, 0xFF, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00]
+
+        let index = ByteCompareService.buildDiffChunkIndexIncremental(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) },
+            bucketCount: 4,
+            chunkSize: 8
+        )
+
+        let first = ByteCompareService.findFirstDiffOffset(
+            in: 0..<left.count,
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) }
+        )
+        XCTAssertEqual(first, 1)
+
+        let second = ByteCompareService.findNextDiffOffset(
+            after: 1,
+            chunkIndex: index,
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) }
+        )
+        XCTAssertEqual(second, 5)
+    }
+
+    func testFindPreviousDiffOffset() {
+        let left: [UInt8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        let right: [UInt8] = [0x00, 0xFF, 0x00, 0x00, 0xFF, 0x00]
+
+        let index = ByteCompareService.buildDiffChunkIndexIncremental(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) },
+            bucketCount: 4,
+            chunkSize: 8
+        )
+
+        let previousFromSecondDiff = ByteCompareService.findPreviousDiffOffset(
+            before: 4,
+            chunkIndex: index,
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) }
+        )
+        XCTAssertEqual(previousFromSecondDiff, 1)
+
+        let previousFromAfterSecondDiff = ByteCompareService.findPreviousDiffOffset(
+            before: 5,
+            chunkIndex: index,
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) }
+        )
+        XCTAssertEqual(previousFromAfterSecondDiff, 4)
+    }
+
+    func testDiffChunkIndexLookup() {
+        let index = CompareDiffChunkIndex(
+            chunkSize: 64,
+            totalBytes: 256,
+            diffChunkStarts: [0, 128],
+            map: CompareDiffMap(
+                bucketCount: 4,
+                totalBytes: 256,
+                leftKinds: [.changed, .equal, .changed, .equal],
+                rightKinds: [.changed, .equal, .changed, .equal]
+            )
+        )
+
+        XCTAssertEqual(ByteCompareService.diffChunkIndex(for: 0, in: index), 0)
+        XCTAssertEqual(ByteCompareService.diffChunkIndex(for: 50, in: index), 0)
+        XCTAssertEqual(ByteCompareService.diffChunkIndex(for: 128, in: index), 1)
+        XCTAssertEqual(ByteCompareService.diffChunkIndex(for: 200, in: index), 1)
+        XCTAssertNil(ByteCompareService.diffChunkIndex(for: -1, in: index))
+    }
+
+    func testFindNextDiffOffsetWrapsFromLastToFirst() {
+        let chunkSize = 64
+        let left = Array(repeating: UInt8(0x00), count: 512)
+        var right = Array(repeating: UInt8(0x00), count: 512)
+        right[0] = 0xFF
+        right[400] = 0xFF
+
+        let index = ByteCompareService.buildDiffChunkIndexIncremental(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) },
+            bucketCount: 8,
+            chunkSize: chunkSize
+        )
+
+        XCTAssertEqual(index.diffChunkStarts, [0, 384])
+
+        let wrapped = ByteCompareService.findNextDiffChunkStartWrapping(
+            after: 400,
+            chunkIndex: index
+        )
+
+        XCTAssertEqual(wrapped, 0)
+    }
+
+    func testFindPreviousDiffOffsetWrapsFromFirstToLast() {
+        let chunkSize = 64
+        let left = Array(repeating: UInt8(0x00), count: 512)
+        var right = Array(repeating: UInt8(0x00), count: 512)
+        right[1] = 0xFF
+        right[400] = 0xFF
+
+        let index = ByteCompareService.buildDiffChunkIndexIncremental(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) },
+            bucketCount: 8,
+            chunkSize: chunkSize
+        )
+
+        XCTAssertEqual(index.diffChunkStarts, [0, 384])
+
+        let wrapped = ByteCompareService.findPreviousDiffChunkStartWrapping(
+            before: 1,
+            chunkIndex: index
+        )
+
+        XCTAssertEqual(wrapped, 384)
+    }
+
+    func testFindPreviousDiffOffsetWrapsWhenNoCurrentOffset() {
+        let chunkSize = 64
+        let left = Array(repeating: UInt8(0x00), count: 512)
+        var right = Array(repeating: UInt8(0x00), count: 512)
+        right[0] = 0xFF
+        right[400] = 0xFF
+
+        let index = ByteCompareService.buildDiffChunkIndexIncremental(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) },
+            bucketCount: 8,
+            chunkSize: chunkSize
+        )
+
+        let wrapped = ByteCompareService.findPreviousDiffChunkStartWrapping(
+            before: left.count,
+            chunkIndex: index
+        )
+
+        XCTAssertEqual(wrapped, 384)
+    }
+
+    func testByteNavigationWrapsToExactDiffBytes() {
+        let chunkSize = 1024
+        let left = Array(repeating: UInt8(0x00), count: 2048)
+        var right = Array(repeating: UInt8(0x00), count: 2048)
+        right[17] = 0xFF
+        right[1024 + 42] = 0xFF
+
+        let index = ByteCompareService.buildDiffChunkIndexIncremental(
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) },
+            bucketCount: 8,
+            chunkSize: chunkSize
+        )
+
+        XCTAssertEqual(index.diffChunkStarts, [0, 1024])
+
+        let next = ByteCompareService.findNextDiffOffsetWrapping(
+            after: -1,
+            chunkIndex: index,
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) }
+        )
+        XCTAssertEqual(next, 17)
+
+        let nextChunk = ByteCompareService.findNextDiffOffsetWrapping(
+            after: 17,
+            chunkIndex: index,
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) }
+        )
+        XCTAssertEqual(nextChunk, 1024 + 42)
+
+        let previous = ByteCompareService.findPreviousDiffOffsetWrapping(
+            before: 1024 + 42,
+            chunkIndex: index,
+            leftSize: left.count,
+            rightSize: right.count,
+            leftBytes: { range in Array(left[range]) },
+            rightBytes: { range in Array(right[range]) }
+        )
+        XCTAssertEqual(previous, 17)
+    }
 }

@@ -87,6 +87,7 @@ struct HelpView: View {
             HelpBullet(String(localized: "Use tabs to switch between open files. ⇧⌘] and ⇧⌘[ move to the next or previous tab."))
             HelpBullet(String(localized: "Tools → Compare… opens a side-by-side diff with a minimap."))
             HelpBullet(String(localized: "Right-click a tab and choose Compare with… to diff against another open file."))
+            HelpBullet(String(localized: "In compare mode, use F3 and ⇧F3 to jump to the next or previous difference. The Inspector shows diff navigation controls."))
         }
     }
 

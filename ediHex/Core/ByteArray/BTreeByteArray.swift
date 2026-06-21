@@ -10,7 +10,7 @@ final class BTreeByteArray: @unchecked Sendable {
     private var changeLockCounter = 0
     private(set) var changeGeneration: UInt64 = 0
 
-    var length: UInt64 { tree.length }
+    nonisolated var length: UInt64 { tree.length }
 
     var byteSlices: [any ByteSlice] {
         tree.allEntries.map(\.slice)
@@ -24,13 +24,13 @@ final class BTreeByteArray: @unchecked Sendable {
         changeLockCounter = max(0, changeLockCounter - 1)
     }
 
-    func byte(at offset: UInt64) -> UInt8? {
+    nonisolated func byte(at offset: UInt64) -> UInt8? {
         guard offset < length else { return nil }
         guard let (entry, beginning) = tree.entry(at: offset) else { return nil }
         return entry.slice.byte(at: offset - beginning)
     }
 
-    func bytes(in range: Range<UInt64>) -> [UInt8] {
+    nonisolated func bytes(in range: Range<UInt64>) -> [UInt8] {
         let clamped = UInt64ByteRange.clamp(range, to: length)
         guard !clamped.isEmpty else { return [] }
         let count = Int(clamped.upperBound - clamped.lowerBound)

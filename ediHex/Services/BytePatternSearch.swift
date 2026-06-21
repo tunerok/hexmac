@@ -38,7 +38,7 @@ struct BytePatternParseResult: Equatable {
 }
 
 enum BytePatternSearch {
-    static let progressChunkSize = 262_144
+    nonisolated static let progressChunkSize = 262_144
 
     static func pattern(from input: String, mode: FindPatternMode) -> Result<[UInt8], HexParseError> {
         switch mode {

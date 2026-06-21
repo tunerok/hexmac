@@ -45,6 +45,18 @@ final class WorkspaceViewModel {
         activePane?.isDocumentOpen ?? false
     }
 
+    var isComparisonPane: Bool {
+        activePane?.isComparisonPane ?? false
+    }
+
+    var canNavigateNextDiff: Bool {
+        activePane?.canNavigateNextDiff ?? false
+    }
+
+    var canNavigatePreviousDiff: Bool {
+        activePane?.canNavigatePreviousDiff ?? false
+    }
+
     var canSave: Bool {
         activePane?.canSave ?? false
     }
@@ -495,6 +507,14 @@ final class WorkspaceViewModel {
 
     func openFindSheet() {
         activePane?.openFindSheet()
+    }
+
+    func navigateToNextDiff() {
+        _ = activePane?.navigateToNextDiff()
+    }
+
+    func navigateToPreviousDiff() {
+        _ = activePane?.navigateToPreviousDiff()
     }
 
     // MARK: - Compare

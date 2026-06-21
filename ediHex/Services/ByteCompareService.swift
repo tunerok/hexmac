@@ -91,6 +91,15 @@ struct CompareDiffIndex: Equatable {
     }
 }
 
+struct CompareDiffChunkIndex: Equatable {
+    let chunkSize: Int
+    let totalBytes: Int
+    let diffChunkStarts: [Int]
+    let map: CompareDiffMap
+
+    var hasDifferences: Bool { !diffChunkStarts.isEmpty }
+}
+
 struct CompareRowContext {
     let leftBytes: [UInt8]
     let rightBytes: [UInt8]
@@ -612,6 +621,379 @@ enum ByteCompareService {
         return index
     }
 
+    nonisolated static func buildDiffChunkIndexIncremental(
+        leftSize: Int,
+        rightSize: Int,
+        leftBytes: (Range<Int>) -> [UInt8],
+        rightBytes: (Range<Int>) -> [UInt8],
+        bucketCount: Int = defaultBucketCount,
+        chunkSize: Int = ChunkedByteReader.defaultChunkSize,
+        onChunk: ((CompareDiffChunkIndex, Double) -> Void)? = nil
+    ) -> CompareDiffChunkIndex {
+        let total = max(leftSize, rightSize)
+        let count = max(1, bucketCount)
+        var leftKinds = Array(repeating: DiffRegionKind.equal, count: count)
+        var rightKinds = Array(repeating: DiffRegionKind.equal, count: count)
+        var diffChunkStarts: [Int] = []
+        diffChunkStarts.reserveCapacity(min((total + chunkSize - 1) / chunkSize, 4096))
+
+        guard total > 0 else {
+            let map = CompareDiffMap(
+                bucketCount: count,
+                totalBytes: 0,
+                leftKinds: leftKinds,
+                rightKinds: rightKinds
+            )
+            let index = CompareDiffChunkIndex(
+                chunkSize: chunkSize,
+                totalBytes: 0,
+                diffChunkStarts: [],
+                map: map
+            )
+            onChunk?(index, 1)
+            return index
+        }
+
+        var cursor = 0
+        while cursor < total {
+            let chunkEnd = min(total, cursor + chunkSize)
+            let leftRange = clampedRange(from: cursor, to: min(leftSize, chunkEnd))
+            let rightRange = clampedRange(from: cursor, to: min(rightSize, chunkEnd))
+            let leftChunk = leftRange.isEmpty ? [] : leftBytes(leftRange)
+            let rightChunk = rightRange.isEmpty ? [] : rightBytes(rightRange)
+
+            if chunksDiffer(leftChunk: leftChunk, rightChunk: rightChunk) {
+                diffChunkStarts.append(cursor)
+                markBucketsForDiffChunk(
+                    chunkStart: cursor,
+                    chunkEnd: chunkEnd,
+                    leftSize: leftSize,
+                    rightSize: rightSize,
+                    total: total,
+                    bucketCount: count,
+                    leftKinds: &leftKinds,
+                    rightKinds: &rightKinds
+                )
+            }
+
+            cursor = chunkEnd
+            let progress = Double(cursor) / Double(total)
+            let map = CompareDiffMap(
+                bucketCount: count,
+                totalBytes: total,
+                leftKinds: leftKinds,
+                rightKinds: rightKinds
+            )
+            let partialIndex = CompareDiffChunkIndex(
+                chunkSize: chunkSize,
+                totalBytes: total,
+                diffChunkStarts: diffChunkStarts,
+                map: map
+            )
+            onChunk?(partialIndex, progress)
+        }
+
+        let map = CompareDiffMap(
+            bucketCount: count,
+            totalBytes: total,
+            leftKinds: leftKinds,
+            rightKinds: rightKinds
+        )
+        return CompareDiffChunkIndex(
+            chunkSize: chunkSize,
+            totalBytes: total,
+            diffChunkStarts: diffChunkStarts,
+            map: map
+        )
+    }
+
+    nonisolated static func findFirstDiffOffset(
+        in range: Range<Int>,
+        leftSize: Int,
+        rightSize: Int,
+        leftBytes: (Range<Int>) -> [UInt8],
+        rightBytes: (Range<Int>) -> [UInt8],
+        chunkSize: Int = ChunkedByteReader.defaultChunkSize
+    ) -> Int? {
+        guard range.lowerBound < range.upperBound else { return nil }
+
+        var regions: [DiffRegion] = []
+        var cursor = range.lowerBound
+
+        while cursor < range.upperBound {
+            let chunkEnd = min(range.upperBound, cursor + chunkSize)
+            let leftRange = clampedRange(from: cursor, to: min(leftSize, chunkEnd))
+            let rightRange = clampedRange(from: cursor, to: min(rightSize, chunkEnd))
+            let leftChunk = leftRange.isEmpty ? [] : leftBytes(leftRange)
+            let rightChunk = rightRange.isEmpty ? [] : rightBytes(rightRange)
+
+            appendDiffRegions(
+                from: cursor,
+                to: chunkEnd,
+                leftSize: leftSize,
+                rightSize: rightSize,
+                leftChunk: leftChunk,
+                rightChunk: rightChunk,
+                leftChunkStart: leftRange.lowerBound,
+                rightChunkStart: rightRange.lowerBound,
+                regions: &regions
+            )
+            cursor = chunkEnd
+        }
+
+        return regions.first?.start
+    }
+
+    nonisolated static func findLastDiffOffset(
+        in range: Range<Int>,
+        leftSize: Int,
+        rightSize: Int,
+        leftBytes: (Range<Int>) -> [UInt8],
+        rightBytes: (Range<Int>) -> [UInt8],
+        chunkSize: Int = ChunkedByteReader.defaultChunkSize
+    ) -> Int? {
+        guard range.lowerBound < range.upperBound else { return nil }
+
+        var regions: [DiffRegion] = []
+        var cursor = range.lowerBound
+
+        while cursor < range.upperBound {
+            let chunkEnd = min(range.upperBound, cursor + chunkSize)
+            let leftRange = clampedRange(from: cursor, to: min(leftSize, chunkEnd))
+            let rightRange = clampedRange(from: cursor, to: min(rightSize, chunkEnd))
+            let leftChunk = leftRange.isEmpty ? [] : leftBytes(leftRange)
+            let rightChunk = rightRange.isEmpty ? [] : rightBytes(rightRange)
+
+            appendDiffRegions(
+                from: cursor,
+                to: chunkEnd,
+                leftSize: leftSize,
+                rightSize: rightSize,
+                leftChunk: leftChunk,
+                rightChunk: rightChunk,
+                leftChunkStart: leftRange.lowerBound,
+                rightChunkStart: rightRange.lowerBound,
+                regions: &regions
+            )
+            cursor = chunkEnd
+        }
+
+        return regions.last?.start
+    }
+
+    nonisolated static func findNextDiffOffset(
+        after offset: Int,
+        chunkIndex: CompareDiffChunkIndex,
+        leftSize: Int,
+        rightSize: Int,
+        leftBytes: (Range<Int>) -> [UInt8],
+        rightBytes: (Range<Int>) -> [UInt8]
+    ) -> Int? {
+        let total = chunkIndex.totalBytes
+        guard offset < total - 1 else { return nil }
+
+        let chunkSize = chunkIndex.chunkSize
+        let currentChunkStart = (offset / chunkSize) * chunkSize
+        let currentChunkEnd = min(total, currentChunkStart + chunkSize)
+
+        if offset + 1 < currentChunkEnd,
+           let found = findFirstDiffOffset(
+               in: (offset + 1)..<currentChunkEnd,
+               leftSize: leftSize,
+               rightSize: rightSize,
+               leftBytes: leftBytes,
+               rightBytes: rightBytes,
+               chunkSize: chunkSize
+           ) {
+            return found
+        }
+
+        let nextChunkStart = lowerBound(in: chunkIndex.diffChunkStarts, value: currentChunkEnd)
+        guard nextChunkStart < chunkIndex.diffChunkStarts.count else { return nil }
+
+        var chunkCursor = nextChunkStart
+        while chunkCursor < chunkIndex.diffChunkStarts.count {
+            let start = chunkIndex.diffChunkStarts[chunkCursor]
+            let end = min(total, start + chunkSize)
+            if let found = findFirstDiffOffset(
+                in: start..<end,
+                leftSize: leftSize,
+                rightSize: rightSize,
+                leftBytes: leftBytes,
+                rightBytes: rightBytes,
+                chunkSize: chunkSize
+            ) {
+                return found
+            }
+            chunkCursor += 1
+        }
+
+        return nil
+    }
+
+    nonisolated static func findPreviousDiffOffset(
+        before offset: Int,
+        chunkIndex: CompareDiffChunkIndex,
+        leftSize: Int,
+        rightSize: Int,
+        leftBytes: (Range<Int>) -> [UInt8],
+        rightBytes: (Range<Int>) -> [UInt8]
+    ) -> Int? {
+        guard offset > 0 else { return nil }
+
+        let total = chunkIndex.totalBytes
+        let chunkSize = chunkIndex.chunkSize
+        let currentChunkStart = (offset / chunkSize) * chunkSize
+
+        if offset > currentChunkStart,
+           let found = findLastDiffOffset(
+               in: currentChunkStart..<offset,
+               leftSize: leftSize,
+               rightSize: rightSize,
+               leftBytes: leftBytes,
+               rightBytes: rightBytes,
+               chunkSize: chunkSize
+           ) {
+            return found
+        }
+
+        let previousChunkEnd = currentChunkStart
+        var chunkCursor = lowerBound(in: chunkIndex.diffChunkStarts, value: previousChunkEnd) - 1
+        while chunkCursor >= 0 {
+            let start = chunkIndex.diffChunkStarts[chunkCursor]
+            let end = min(total, start + chunkSize)
+            if let found = findLastDiffOffset(
+                in: start..<end,
+                leftSize: leftSize,
+                rightSize: rightSize,
+                leftBytes: leftBytes,
+                rightBytes: rightBytes,
+                chunkSize: chunkSize
+            ) {
+                return found
+            }
+            chunkCursor -= 1
+        }
+
+        return nil
+    }
+
+    nonisolated static func findNextDiffChunkStartWrapping(
+        after offset: Int,
+        chunkIndex: CompareDiffChunkIndex
+    ) -> Int? {
+        let starts = chunkIndex.diffChunkStarts
+        guard !starts.isEmpty else { return nil }
+
+        let currentIndex = diffChunkIndex(for: offset, in: chunkIndex) ?? -1
+        let nextIndex = currentIndex + 1
+        if nextIndex < starts.count {
+            return starts[nextIndex]
+        }
+        return starts[0]
+    }
+
+    nonisolated static func findPreviousDiffChunkStartWrapping(
+        before offset: Int,
+        chunkIndex: CompareDiffChunkIndex
+    ) -> Int? {
+        let starts = chunkIndex.diffChunkStarts
+        guard !starts.isEmpty else { return nil }
+
+        let currentIndex: Int
+        if offset >= chunkIndex.totalBytes {
+            currentIndex = starts.count
+        } else {
+            currentIndex = diffChunkIndex(for: offset, in: chunkIndex) ?? starts.count
+        }
+
+        let previousIndex = currentIndex - 1
+        if previousIndex >= 0 {
+            return starts[previousIndex]
+        }
+        return starts[starts.count - 1]
+    }
+
+    nonisolated static func findNextDiffOffsetWrapping(
+        after offset: Int,
+        chunkIndex: CompareDiffChunkIndex,
+        leftSize: Int,
+        rightSize: Int,
+        leftBytes: (Range<Int>) -> [UInt8],
+        rightBytes: (Range<Int>) -> [UInt8]
+    ) -> Int? {
+        if let found = findNextDiffOffset(
+            after: offset,
+            chunkIndex: chunkIndex,
+            leftSize: leftSize,
+            rightSize: rightSize,
+            leftBytes: leftBytes,
+            rightBytes: rightBytes
+        ) {
+            return found
+        }
+        return findFirstDiffOffset(
+            in: 0..<chunkIndex.totalBytes,
+            leftSize: leftSize,
+            rightSize: rightSize,
+            leftBytes: leftBytes,
+            rightBytes: rightBytes,
+            chunkSize: chunkIndex.chunkSize
+        )
+    }
+
+    nonisolated static func findPreviousDiffOffsetWrapping(
+        before offset: Int,
+        chunkIndex: CompareDiffChunkIndex,
+        leftSize: Int,
+        rightSize: Int,
+        leftBytes: (Range<Int>) -> [UInt8],
+        rightBytes: (Range<Int>) -> [UInt8]
+    ) -> Int? {
+        if let found = findPreviousDiffOffset(
+            before: offset,
+            chunkIndex: chunkIndex,
+            leftSize: leftSize,
+            rightSize: rightSize,
+            leftBytes: leftBytes,
+            rightBytes: rightBytes
+        ) {
+            return found
+        }
+        return findLastDiffOffset(
+            in: 0..<chunkIndex.totalBytes,
+            leftSize: leftSize,
+            rightSize: rightSize,
+            leftBytes: leftBytes,
+            rightBytes: rightBytes,
+            chunkSize: chunkIndex.chunkSize
+        )
+    }
+
+    nonisolated static func diffChunkIndex(
+        for offset: Int,
+        in chunkIndex: CompareDiffChunkIndex
+    ) -> Int? {
+        let starts = chunkIndex.diffChunkStarts
+        guard !starts.isEmpty else { return nil }
+
+        var low = 0
+        var high = starts.count - 1
+        var result: Int?
+
+        while low <= high {
+            let mid = (low + high) / 2
+            if starts[mid] <= offset {
+                result = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+
+        return result
+    }
+
     nonisolated static func formatTextReport(
         entries: [DiffEntry],
         leftName: String,
@@ -956,5 +1338,86 @@ enum ByteCompareService {
         let left = leftByte.map { HexFormatter.hexPair(for: $0) } ?? "--"
         let right = rightByte.map { HexFormatter.hexPair(for: $0) } ?? "--"
         return "0x\(offset)  \(kind.rawValue)  \(left) -> \(right)"
+    }
+
+    nonisolated private static func chunkFingerprint(_ bytes: [UInt8]) -> UInt64 {
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in bytes {
+            hash ^= UInt64(byte)
+            hash &*= 0x100000001b3
+        }
+        hash ^= UInt64(bytes.count)
+        return hash
+    }
+
+    nonisolated private static func chunksDiffer(leftChunk: [UInt8], rightChunk: [UInt8]) -> Bool {
+        if leftChunk.count != rightChunk.count { return true }
+        return chunkFingerprint(leftChunk) != chunkFingerprint(rightChunk)
+    }
+
+    nonisolated private static func markBucketsForDiffChunk(
+        chunkStart: Int,
+        chunkEnd: Int,
+        leftSize: Int,
+        rightSize: Int,
+        total: Int,
+        bucketCount: Int,
+        leftKinds: inout [DiffRegionKind],
+        rightKinds: inout [DiffRegionKind]
+    ) {
+        guard chunkStart < chunkEnd, total > 0, bucketCount > 0 else { return }
+
+        let firstBucket = bucketIndex(for: chunkStart, total: total, bucketCount: bucketCount)
+        let lastOffset = max(chunkStart, chunkEnd - 1)
+        let lastBucket = bucketIndex(for: lastOffset, total: total, bucketCount: bucketCount)
+
+        for bucket in firstBucket...lastBucket {
+            let bucketStart = (bucket * total) / bucketCount
+            let bucketEnd = ((bucket + 1) * total) / bucketCount
+            let overlapStart = max(bucketStart, chunkStart)
+            let overlapEnd = min(bucketEnd, chunkEnd)
+
+            let hasLeft = overlapStart < leftSize
+            let hasRight = overlapStart < rightSize
+
+            if hasLeft, hasRight {
+                leftKinds[bucket] = maxPriority(leftKinds[bucket], .changed)
+                rightKinds[bucket] = maxPriority(rightKinds[bucket], .changed)
+            } else if hasLeft {
+                leftKinds[bucket] = maxPriority(leftKinds[bucket], .deleted)
+            } else if hasRight {
+                rightKinds[bucket] = maxPriority(rightKinds[bucket], .added)
+            }
+
+            _ = overlapEnd
+        }
+    }
+
+    nonisolated private static func lowerBound(in array: [Int], value: Int) -> Int {
+        var low = 0
+        var high = array.count
+        while low < high {
+            let mid = (low + high) / 2
+            if array[mid] < value {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        return low
+    }
+
+    nonisolated private static func upperBound(in array: [Int], value: Int) -> Int {
+        var low = 0
+        var high = array.count
+        while low < high {
+            let mid = (low + high) / 2
+            if array[mid] <= value {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        return low
     }
 }

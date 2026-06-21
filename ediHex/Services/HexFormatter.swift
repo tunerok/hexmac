@@ -152,7 +152,7 @@ enum HexFormatter {
 }
 
 private extension String {
-    func leftPadded(to length: Int, with character: Character) -> String {
+    nonisolated func leftPadded(to length: Int, with character: Character) -> String {
         if count >= length { return self }
         return String(repeating: character, count: length - count) + self
     }

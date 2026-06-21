@@ -14,7 +14,7 @@ final class MemoryByteSlice: ByteSlice, @unchecked Sendable {
     private let dataLength: Int
     private let tail: [UInt8]
 
-    var length: UInt64 { UInt64(dataLength + tail.count) }
+    nonisolated var length: UInt64 { UInt64(dataLength + tail.count) }
 
     init(data: Data) {
         self.data = data
@@ -41,7 +41,7 @@ final class MemoryByteSlice: ByteSlice, @unchecked Sendable {
         self.tail = [value]
     }
 
-    func copyBytes(into buffer: UnsafeMutableRawPointer, range: Range<UInt64>) {
+    nonisolated func copyBytes(into buffer: UnsafeMutableRawPointer, range: Range<UInt64>) {
         precondition(range.upperBound <= length)
         guard !range.isEmpty else { return }
 

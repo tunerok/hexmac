@@ -11,6 +11,7 @@ struct InspectorPanelView: View {
     let selectedOffset: Int?
     let highlights: [HexHighlight]
     let findSession: FindSession?
+    let compareState: CompareInspectorState?
     let canFindPrevious: Bool
     let canFindNext: Bool
     let onAddHighlight: (HighlightColor) -> Void
@@ -52,64 +53,68 @@ struct InspectorPanelView: View {
 
             ScrollView {
                 Form {
-                    Section(String(localized: "Selection")) {
-                        InspectorRow(title: String(localized: "Offset (hex)")) {
-                            Text("0x\(HexFormatter.offsetString(for: displayStartOffset))")
-                        }
+                    if let compareState {
+                        InspectorCompareSection(state: compareState)
+                    } else {
+                        Section(String(localized: "Selection")) {
+                            InspectorRow(title: String(localized: "Offset (hex)")) {
+                                Text("0x\(HexFormatter.offsetString(for: displayStartOffset))")
+                            }
 
-                        InspectorRow(title: String(localized: "Offset (dec)")) {
-                            Text("\(displayStartOffset)")
-                        }
+                            InspectorRow(title: String(localized: "Offset (dec)")) {
+                                Text("\(displayStartOffset)")
+                            }
 
-                        InspectorRow(title: String(localized: "Length")) {
-                            Text("\(displayLength) \(String(localized: "bytes"))")
-                        }
-                    }
-
-                    if let findSession {
-                        InspectorFindResultsSection(
-                            session: findSession,
-                            canFindPrevious: canFindPrevious,
-                            canFindNext: canFindNext,
-                            onFindPrevious: onFindPrevious,
-                            onFindNext: onFindNext,
-                            onClearFind: onClearFind
-                        )
-                    }
-
-                    Section(String(localized: "Highlights")) {
-                        HighlightColorPicker(onSelect: onAddHighlight)
-
-                        if highlights.isEmpty {
-                            Text(String(localized: "No highlights"))
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(highlights) { highlight in
-                                HighlightRow(
-                                    highlight: highlight,
-                                    onNavigate: { onNavigateToHighlight(highlight) },
-                                    onRemove: { onRemoveHighlight(highlight.id) }
-                                )
+                            InspectorRow(title: String(localized: "Length")) {
+                                Text("\(displayLength) \(String(localized: "bytes"))")
                             }
                         }
-                    }
 
-                    Section(String(localized: "Values")) {
-                        InspectorRow(title: String(localized: "Binary")) {
-                            Text(displayBinary)
+                        if let findSession {
+                            InspectorFindResultsSection(
+                                session: findSession,
+                                canFindPrevious: canFindPrevious,
+                                canFindNext: canFindNext,
+                                onFindPrevious: onFindPrevious,
+                                onFindNext: onFindNext,
+                                onClearFind: onClearFind
+                            )
                         }
 
-                        ForEach(integerInterpretations) { interpretation in
-                            if interpretation.littleEndian == interpretation.bigEndian {
-                                InspectorRow(title: interpretation.typeName) {
-                                    Text(interpretation.littleEndian)
-                                }
+                        Section(String(localized: "Highlights")) {
+                            HighlightColorPicker(onSelect: onAddHighlight)
+
+                            if highlights.isEmpty {
+                                Text(String(localized: "No highlights"))
+                                    .foregroundStyle(.secondary)
                             } else {
-                                InspectorRow(title: "\(interpretation.typeName) LE") {
-                                    Text(interpretation.littleEndian)
+                                ForEach(highlights) { highlight in
+                                    HighlightRow(
+                                        highlight: highlight,
+                                        onNavigate: { onNavigateToHighlight(highlight) },
+                                        onRemove: { onRemoveHighlight(highlight.id) }
+                                    )
                                 }
-                                InspectorRow(title: "\(interpretation.typeName) BE") {
-                                    Text(interpretation.bigEndian)
+                            }
+                        }
+
+                        Section(String(localized: "Values")) {
+                            InspectorRow(title: String(localized: "Binary")) {
+                                Text(displayBinary)
+                            }
+
+                            ForEach(integerInterpretations) { interpretation in
+                                if interpretation.littleEndian == interpretation.bigEndian {
+                                    InspectorRow(title: interpretation.typeName) {
+                                        Text(interpretation.littleEndian)
+                                    }
+                                } else {
+                                    InspectorRow(title: "\(interpretation.typeName) LE") {
+                                        Text(interpretation.littleEndian)
+                                    }
+                                    InspectorRow(title: "\(interpretation.typeName) BE") {
+                                        Text(interpretation.bigEndian)
+                                    }
                                 }
                             }
                         }
@@ -208,6 +213,7 @@ private struct InspectorRow<Content: View>: View {
             matches: [72],
             currentIndex: 0
         ),
+        compareState: nil,
         canFindPrevious: false,
         canFindNext: false,
         onAddHighlight: { _ in },
@@ -226,6 +232,7 @@ private struct InspectorRow<Content: View>: View {
         selectedOffset: nil,
         highlights: [],
         findSession: nil,
+        compareState: nil,
         canFindPrevious: false,
         canFindNext: false,
         onAddHighlight: { _ in },

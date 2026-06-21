@@ -19,63 +19,51 @@ struct CompareMinimapView: View {
     private let stripWidth: CGFloat = 14
     private let stripGap: CGFloat = 2
     private let scrubInterval: TimeInterval = 0.075
+    private let minDiffMarkerHeight: CGFloat = 3
+    private let scanProgressLineHeight: CGFloat = 2
 
     var body: some View {
-        VStack(spacing: 0) {
-            if isLoading {
-                if let progress {
-                    ProgressView(value: progress) {
-                        Text(String(localized: "Building map…"))
-                            .font(.caption2)
-                    } currentValueLabel: {
-                        Text("\(Int(progress * 100))%")
-                            .font(.caption2.monospacedDigit())
-                    }
-                    .controlSize(.small)
-                    .padding(.horizontal, 4)
-                    .padding(.top, 8)
-                } else {
-                    ProgressView()
-                        .controlSize(.small)
-                        .padding(.top, 8)
+        GeometryReader { geometry in
+            ZStack(alignment: .topLeading) {
+                HStack(spacing: stripGap) {
+                    minimapStrip(
+                        kinds: diffMap?.leftKinds ?? [],
+                        height: geometry.size.height
+                    )
+                    minimapStrip(
+                        kinds: diffMap?.rightKinds ?? [],
+                        height: geometry.size.height
+                    )
                 }
-            }
 
-            GeometryReader { geometry in
-                ZStack(alignment: .topLeading) {
-                    HStack(spacing: stripGap) {
-                        minimapStrip(
-                            kinds: diffMap?.leftKinds ?? [],
-                            height: geometry.size.height
-                        )
-                        minimapStrip(
-                            kinds: diffMap?.rightKinds ?? [],
-                            height: geometry.size.height
+                if isLoading {
+                    scanProgressIndicator(
+                        height: geometry.size.height,
+                        progress: progress ?? 0
+                    )
+                }
+
+                viewportIndicator(height: geometry.size.height)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        navigate(
+                            toY: value.location.y,
+                            height: geometry.size.height,
+                            isFinal: false
                         )
                     }
-
-                    viewportIndicator(height: geometry.size.height)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            navigate(
-                                toY: value.location.y,
-                                height: geometry.size.height,
-                                isFinal: false
-                            )
-                        }
-                        .onEnded { value in
-                            navigate(
-                                toY: value.location.y,
-                                height: geometry.size.height,
-                                isFinal: true
-                            )
-                        }
-                )
-            }
+                    .onEnded { value in
+                        navigate(
+                            toY: value.location.y,
+                            height: geometry.size.height,
+                            isFinal: true
+                        )
+                    }
+            )
         }
         .frame(width: stripWidth * 2 + stripGap + 10)
         .padding(.vertical, 8)
@@ -86,23 +74,43 @@ struct CompareMinimapView: View {
     private func minimapStrip(kinds: [DiffRegionKind], height: CGFloat) -> some View {
         Canvas { context, size in
             let bucketCount = max(kinds.count, 1)
-            let bucketHeight = max(1, size.height / CGFloat(bucketCount))
+
+            context.fill(
+                Path(CGRect(origin: .zero, size: size)),
+                with: .color(Color.secondary.opacity(0.12))
+            )
 
             for index in 0..<bucketCount {
+                let kind = kinds[safe: index] ?? .equal
+                guard kind != .equal else { continue }
+
+                let centerY = (CGFloat(index) + 0.5) / CGFloat(bucketCount) * size.height
+                let proportionalHeight = size.height / CGFloat(bucketCount)
+                let markerHeight = max(minDiffMarkerHeight, proportionalHeight)
                 let rect = CGRect(
                     x: 0,
-                    y: CGFloat(index) * bucketHeight,
+                    y: centerY - markerHeight / 2,
                     width: size.width,
-                    height: bucketHeight
+                    height: markerHeight
                 )
                 context.fill(
                     Path(rect),
-                    with: .color(color(for: kinds[safe: index] ?? .equal))
+                    with: .color(color(for: kind))
                 )
             }
         }
         .frame(width: stripWidth, height: height)
         .clipShape(RoundedRectangle(cornerRadius: 2))
+    }
+
+    private func scanProgressIndicator(height: CGFloat, progress: Double) -> some View {
+        let fraction = CGFloat(min(1, max(0, progress)))
+
+        return Capsule()
+            .fill(Color.primary.opacity(0.55))
+            .frame(width: stripWidth * 2 + stripGap, height: scanProgressLineHeight)
+            .offset(y: fraction * height - scanProgressLineHeight / 2)
+            .allowsHitTesting(false)
     }
 
     private func viewportIndicator(height: CGFloat) -> some View {

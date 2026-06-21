@@ -173,13 +173,43 @@ struct WorkspaceView: View {
                 }
                 .layoutPriority(1)
 
-                if let pane = workspace.activePane, !pane.isComparisonPane {
+                if let pane = workspace.activePane, pane.isComparisonPane {
+                    InspectorPanelView(
+                        selection: nil,
+                        bytes: [],
+                        selectedOffset: pane.comparisonCurrentDiffOffset,
+                        highlights: [],
+                        findSession: nil,
+                        compareState: CompareInspectorState(
+                            leftName: pane.comparisonLeftName,
+                            rightName: pane.comparisonRightName,
+                            isLoading: pane.isDiffMapLoading,
+                            progress: pane.isDiffMapLoading ? pane.diffMapProgress : nil,
+                            diffCount: pane.comparisonDiffCount,
+                            currentDiffOffset: pane.comparisonCurrentDiffOffset,
+                            canNavigatePrevious: pane.canNavigatePreviousDiff,
+                            canNavigateNext: pane.canNavigateNextDiff,
+                            onNavigatePrevious: { _ = pane.navigateToPreviousDiff() },
+                            onNavigateNext: { _ = pane.navigateToNextDiff() }
+                        ),
+                        canFindPrevious: false,
+                        canFindNext: false,
+                        onAddHighlight: { _ in },
+                        onRemoveHighlight: { _ in },
+                        onNavigateToHighlight: { _ in },
+                        onFindPrevious: {},
+                        onFindNext: {},
+                        onClearFind: {}
+                    )
+                    .layoutPriority(0)
+                } else if let pane = workspace.activePane {
                     InspectorPanelView(
                         selection: pane.selection,
                         bytes: inspectorBytes(for: pane),
                         selectedOffset: pane.selectedOffset,
                         highlights: pane.highlights,
                         findSession: pane.findSession,
+                        compareState: nil,
                         canFindPrevious: pane.canFindPrevious,
                         canFindNext: pane.canFindNext,
                         onAddHighlight: { color in
@@ -203,6 +233,7 @@ struct WorkspaceView: View {
                         selectedOffset: nil,
                         highlights: [],
                         findSession: nil,
+                        compareState: nil,
                         canFindPrevious: false,
                         canFindNext: false,
                         onAddHighlight: { _ in },

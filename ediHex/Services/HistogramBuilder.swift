@@ -6,7 +6,7 @@
 import Foundation
 
 enum HistogramBuilder {
-    static let progressChunkSize = 262_144
+    nonisolated static let progressChunkSize = 262_144
 
     static func build(from bytes: [UInt8]) -> [Int] {
         var counts = Array(repeating: 0, count: 256)

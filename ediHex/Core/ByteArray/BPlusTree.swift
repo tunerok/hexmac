@@ -10,15 +10,15 @@ import Foundation
 final class BPlusTree: @unchecked Sendable {
     private var entries: [SliceBox] = []
 
-    var length: UInt64 {
+    nonisolated var length: UInt64 {
         entries.reduce(0) { $0 + $1.length }
     }
 
-    var allEntries: [SliceBox] {
+    nonisolated var allEntries: [SliceBox] {
         entries
     }
 
-    func entry(at offset: UInt64) -> (SliceBox, UInt64)? {
+    nonisolated func entry(at offset: UInt64) -> (SliceBox, UInt64)? {
         guard offset < length else { return nil }
         var current: UInt64 = 0
         for entry in entries {

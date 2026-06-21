@@ -62,11 +62,11 @@ final class FileReference: @unchecked Sendable {
         close()
     }
 
-    func isSameFile(as other: FileReference) -> Bool {
+    nonisolated func isSameFile(as other: FileReference) -> Bool {
         inode == other.inode && device == other.device
     }
 
-    func read(into buffer: UnsafeMutableRawPointer, length count: Int, from offset: UInt64) throws {
+    nonisolated func read(into buffer: UnsafeMutableRawPointer, length count: Int, from offset: UInt64) throws {
         guard count >= 0, offset <= self.length else { throw ByteArrayError.outOfBounds }
         guard UInt64(count) <= self.length - offset else { throw ByteArrayError.outOfBounds }
         guard count > 0 else { return }

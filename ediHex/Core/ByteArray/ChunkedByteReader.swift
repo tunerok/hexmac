@@ -6,9 +6,9 @@
 import Foundation
 
 enum ChunkedByteReader {
-    static let defaultChunkSize = 1_048_576
+    nonisolated static let defaultChunkSize = 1_048_576
 
-    static func forEachChunk(
+    nonisolated static func forEachChunk(
         in range: Range<Int>,
         chunkSize: Int = defaultChunkSize,
         overlap: Int = 0,

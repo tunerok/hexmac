@@ -117,6 +117,18 @@ struct ediHexApp: App {
             .keyboardShortcut("f", modifiers: .command)
             .disabled(!workspace.isDocumentOpen)
 
+            Button(String(localized: "Next Difference")) {
+                workspace.navigateToNextDiff()
+            }
+            .keyboardShortcut(KeyEquivalent(Character(UnicodeScalar(0xF706)!)))
+            .disabled(!workspace.isComparisonPane || !workspace.canNavigateNextDiff)
+
+            Button(String(localized: "Previous Difference")) {
+                workspace.navigateToPreviousDiff()
+            }
+            .keyboardShortcut(KeyEquivalent(Character(UnicodeScalar(0xF706)!)), modifiers: .shift)
+            .disabled(!workspace.isComparisonPane || !workspace.canNavigatePreviousDiff)
+
             Button(String(localized: "Show as Binary…")) {
                 workspace.openBinarySheet()
             }
