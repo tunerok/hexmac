@@ -100,7 +100,7 @@ ediHex/
 ├── Views/                   # SwiftUI views (grid, compare, tools, terminal)
 └── Services/                # I/O, search, hash, CRC, scroll, compare, terminal
 
-ediHexTests/                 # Unit tests (13 suites)
+ediHexTests/                 # Unit tests (18 files, 22 suites, 224 tests)
 ```
 
 ## Contributing
