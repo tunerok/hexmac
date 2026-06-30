@@ -149,10 +149,14 @@ struct HexRowView: View, Equatable {
 
     private var textColumn: some View {
         ZStack(alignment: .leading) {
-            Text(compactTextLine)
-                .font(.body.monospaced())
-                .frame(width: HexFormatter.textColumnWidth(for: bytesPerRow), alignment: .leading)
-                .lineLimit(1)
+            HStack(spacing: 0) {
+                ForEach(0..<bytesPerRow, id: \.self) { column in
+                    Text(String(textCharacter(at: column)))
+                        .font(.body.monospaced())
+                        .frame(width: HexGridLayout.textCharacterWidth, alignment: .leading)
+                }
+            }
+            .frame(width: HexFormatter.textColumnWidth(for: bytesPerRow), alignment: .leading)
 
             if let selectionSpans {
                 HexSelectionCanvasOverlay(
@@ -162,6 +166,7 @@ struct HexRowView: View, Equatable {
                 )
             }
         }
+        .clipped()
     }
 
     private var compactHexLine: String {
@@ -182,22 +187,15 @@ struct HexRowView: View, Equatable {
         return parts.joined(separator: " ")
     }
 
-    private var compactTextLine: String {
-        let characters = bytes.isEmpty ? [] : textCharacters
-        var line = ""
-        line.reserveCapacity(bytesPerRow)
-        for column in 0..<bytesPerRow {
-            let offset = rowOffset + column
-            if offset < fileSize, column < characters.count {
-                line.append(characters[column])
-            } else {
-                line.append(" ")
-            }
-        }
-        return line
-    }
-
     private var textCharacters: [Character] {
         HexFormatter.alignedTextCharacters(for: bytes, encoding: textEncoding)
+    }
+
+    private func textCharacter(at column: Int) -> Character {
+        let offset = rowOffset + column
+        guard offset < fileSize else { return " " }
+        let characters = bytes.isEmpty ? [] : textCharacters
+        guard column < characters.count else { return " " }
+        return characters[column]
     }
 }

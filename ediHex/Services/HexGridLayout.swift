@@ -15,7 +15,9 @@ enum HexGridLayout {
     static let cellSpacing: CGFloat = 2
     static let dividerHorizontalPadding: CGFloat = 4
     static let dividerWidth: CGFloat = 1
-    static let textCharacterWidth: CGFloat = 10
+    static var textCharacterWidth: CGFloat {
+        HexFontMetrics.bodyMonospacedCharacterWidth
+    }
     static let headerContentHeight: CGFloat = 20
     static let headerBottomPadding: CGFloat = 4
 

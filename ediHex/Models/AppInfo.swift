@@ -6,7 +6,7 @@
 import Foundation
 
 enum AppInfo {
-    static let marketingVersion = "0.2a"
+    static let marketingVersion = "0.2b"
 
     static var version: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? marketingVersion
